@@ -4,7 +4,7 @@
 This script will take an input TXT file and generate a CSV of multiple variatio
 
 ## Input file format
-In a .txt file, simply enclose the sections you want to vary with double brackets [[ ]] and then put doubel pipes || between the variations themselves.
+In a .txt file, simply enclose the sections you want to vary with double brackets [[ ]] and then put double pipes || between the variations themselves.
 
 ## Usage
 Simply call the generate_variations function and pass it your input file name. Optional parameters allow you to name the output something different and to supress the printing of varaitions in the console.
