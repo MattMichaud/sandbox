@@ -67,4 +67,4 @@ def generate_variations(input_file, output_file=None, verbose=True):
 
 
 
-generate_variations(input_file='sample_input.txt')
+generate_variations(input_file='sample_input.txt', output_file='sample_output.txt')
