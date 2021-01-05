@@ -50,7 +50,7 @@ def print_results(df, field):
         print_line()
         print(row[field])
 
-def generate_variations(input_file, verbose=True, output_file=None):
+def generate_variations(input_file, output_file=None, verbose=True):
     import os
     abspath = os.path.abspath(__file__)
     dname = os.path.dirname(abspath)

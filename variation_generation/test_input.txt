@@ -1,1 +1,1 @@
-This script will [[generate||create]] [[multiple||several]] variatons at once.
+This script will [[generate||create]] your [[versions||variations]].
