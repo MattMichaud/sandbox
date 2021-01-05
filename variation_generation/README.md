@@ -20,6 +20,10 @@ If no output_file is passed, the output_file will have the same name as the inpu
 ```
 This script will [[generate||create]] your [[versions||variations]].
 ```
+### Sample Function Call
+```python
+generate_variations(input_file='sample_input.txt', output_file='sample_output.csv')
+```
 ### Sample Output
 [sample_output.csv](sample_output.csv)
 ```
