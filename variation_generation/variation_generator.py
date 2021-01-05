@@ -51,11 +51,20 @@ def print_results(df, field):
         print(row[field])
 
 def generate_variations(input_file, verbose=True, output_file=None):
+    import os
+    abspath = os.path.abspath(__file__)
+    dname = os.path.dirname(abspath)
+    os.chdir(dname)
+
     if not output_file:
         output_file = input_file.replace('.txt','.csv')
+
     df = pd.DataFrame([''.join(element) for element in product(*parse_input(input_file))], columns=['text'])
     df.to_csv(output_file, header=False, index=False)
     if verbose:
         print_results(df, 'text')
+
+
+
 
 generate_variations(input_file='test_input.txt', output_file='output2.csv', verbose=True)
