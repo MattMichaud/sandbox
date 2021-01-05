@@ -21,7 +21,7 @@ If no output_file is passed, the output_file will have the same name as the inpu
 This script will [[generate||create]] your [[versions||variations]].
 ```
 ### Sample Output
-[sample_output.txt](sample_output.csv)
+[sample_output.csv](sample_output.csv)
 ```
 This script will generate your versions.
 This script will generate your variations.
