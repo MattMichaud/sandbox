@@ -1,7 +1,7 @@
 # Variation Generator
 
 ## Description
-This script will take an input TXT file and generate a CSV of multiple variatio
+This script will take an input TXT file and generate a CSV of multiple variations.
 
 ## Input file format
 In a .txt file, simply enclose the sections you want to vary with double brackets [[ ]] and then put double pipes || between the variations themselves.
