@@ -15,7 +15,7 @@ If no output_file is passed, the output_file will have the same name as the inpu
 
 ## Example
 
-### Sample Input
+### Sample Input File
 [sample_input.txt](sample_input.txt)
 ```
 This script will [[generate||create]] your [[versions||variations]].
@@ -24,7 +24,7 @@ This script will [[generate||create]] your [[versions||variations]].
 ```python
 generate_variations(input_file='sample_input.txt', output_file='sample_output.csv')
 ```
-### Sample Output
+### Sample Output File
 [sample_output.csv](sample_output.csv)
 ```
 This script will generate your versions.
