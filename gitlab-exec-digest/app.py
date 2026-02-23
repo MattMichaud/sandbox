@@ -1,119 +1,108 @@
 import streamlit as st
-import gitlab
-import os
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
-import google.generativeai as genai
-
-load_dotenv()
-
-
-# --- GitLab Connection ---
-@st.cache_resource
-def get_gitlab_client():
-    return gitlab.Gitlab(
-        url=os.getenv("GITLAB_URL"), private_token=os.getenv("GITLAB_TOKEN")
-    )
-
-
-@st.cache_data(ttl=3600)
-def fetch_all_projects():
-    gl = get_gitlab_client()
-    group_id = os.getenv("COMPANY_GROUP_ID")
-
-    if group_id:
-        group = gl.groups.get(group_id)
-        # include_subgroups=True ensures we see projects in nested squads/divisions
-        projects = group.projects.list(
-            get_all=True, simple=True, include_subgroups=True, all_levels=True
-        )
-    else:
-        projects = gl.projects.list(get_all=True, simple=True, membership=True)
-
-    return {p.path_with_namespace: p.id for p in projects}
-
-
-# -- Helper Function ---
-def get_start_date(timeframe_label):
-    now = datetime.now()
-    if timeframe_label == "Last Day":
-        delta = timedelta(days=1)
-    elif timeframe_label == "Last Week":
-        delta = timedelta(weeks=1)
-    else:  # Last Month
-        delta = timedelta(days=30)
-    return (now - delta).isoformat()
-
-
-# Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-
-def summarize_with_gemini(mrs_data, timeframe):
-    if not mrs_data:
-        return "No significant activity found for this period."
-
-    # Use the specific model string from your capability list
-    # Gemini 3 Flash is ideal for this kind of text-heavy summarization
-    generation_config = {
-        "temperature": 0.2,
-        "top_p": 0.95,
-        "top_k": 40,
-        "max_output_tokens": 2048,
-    }
-
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview", generation_config=generation_config
-    )
-
-    # Build the context string
-    mr_context = ""
-    for mr in mrs_data:
-        diff_snippet = "\n".join(mr["diffs"])[
-            :1500
-        ]  # Increased limit slightly for Gemini 3
-
-        mr_context += f"""
----
-REPO: {mr['repo']}
-TITLE: {mr['title']}
-AUTHOR: {mr['author']}
-DESCRIPTION: {mr['description']}
-CODE SNIPPET:
-{diff_snippet}
-"""
-
-    prompt = f"""
-    You are a Technical Chief of Staff. Review these Merge Requests from the {timeframe} 
-    and create an "Impact Digest" for a company executive.
-    
-    The executive wants to see high-level progress and interesting technical wins.
-    
-    STRUCTURE:
-    1. **Executive Summary**: 1-2 sentences on overall velocity.
-    2. **Impactful Changes**: Highlight 3-5 major changes. Focus on the "Why" (e.g., improves scaling, reduces cost, enhances user experience).
-    3. **Technical Highlights**: Note any interesting architectural choices or refactors found in the diffs.
-    
-    Avoid jargon. Focus on business and technical value.
-
-    DATA:
-    {mr_context}
-    """
-
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Summarization failed with Gemini 3: {str(e)}"
+from datetime import datetime
+import pandas as pd
+import altair as alt
+import helper
+import importlib
 
 
 # --- App UI ---
 st.set_page_config(page_title="GitLab Digest", page_icon="📝", layout="wide")
-st.title("🚀 Merge Request Digest")
+st.title("🚀 Merge Request Explorer")
+
+
+@st.fragment
+def render_digest_tab(digest_data, timeframe):
+    if st.button("Generate Digest", type="primary"):
+        with st.spinner("Analyzing data..."):
+            digest_json = helper.summarize_with_gemini(digest_data, timeframe)
+
+        if not digest_json:
+            st.error("Failed to generate digest. Please try again.")
+            return
+
+        # 1. Executive Summary
+        st.markdown("### 📋 Executive Summary")
+        st.info(digest_json.get("executive_summary", "No summary available."))
+
+        # 2. Impactful Changes
+        st.markdown("### 💥 Impactful Changes")
+        changes = digest_json.get("impactful_changes", [])
+        if changes:
+            for change in changes:
+                with st.container(border=True):
+                    st.markdown(
+                        f"#### [{change.get('title', 'Untitled')}]({change.get('url', '#')})"
+                    )
+                    st.markdown(change.get("description", "No description."))
+                    st.caption(
+                        f"👤 **{change.get('author', 'Unknown')}** | 🏷️ *{change.get('context_area', 'General')}*"
+                    )
+        else:
+            st.markdown("_No major impactful changes identified._")
+
+        # 3. Technical Highlights
+        st.markdown("### 🛠️ Technical Highlights")
+        highlights = digest_json.get("technical_highlights", [])
+        if highlights:
+            for item in highlights:
+                st.markdown(f"- {item}")
+        else:
+            st.markdown("_No specific technical highlights._")
+
+        # Reconstruct Markdown for Download
+        md_report = f"# Executive Digest - {datetime.now().strftime('%Y-%m-%d')}\n\n"
+        md_report += (
+            f"## Executive Summary\n{digest_json.get('executive_summary', '')}\n\n"
+        )
+        md_report += "## Impactful Changes\n"
+        for change in changes:
+            md_report += f"- **[{change.get('title', 'Untitled')}]({change.get('url', '#')})** - {change.get('context_area', 'General')} (by {change.get('author', 'Unknown')}): {change.get('description', '')}\n"
+        md_report += "\n## Technical Highlights\n"
+        for item in highlights:
+            md_report += f"- {item}\n"
+
+        st.markdown("---")
+        st.download_button(
+            "Download Digest (.md)",
+            md_report,
+            file_name=f"digest_{datetime.now().strftime('%Y%m%d')}.md",
+        )
+
+
+@st.fragment
+def render_snitch_tab(digest_data):
+    if st.button("Auto Snitch"):
+        with st.spinner("Snitching on teammates..."):
+            snitch_data = helper.auto_snitch_with_gemini(digest_data)
+
+        st.markdown("### 🕵️ Auto Snitch Recommendations")
+
+        if snitch_data:
+            for item in snitch_data:
+                with st.container(border=True):
+                    st.markdown(
+                        f"### [{item.get('Demo Title', 'Untitled')}]({item.get('Link', '#')})"
+                    )
+
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**👤 Author:** {item.get('Author', 'Unknown')}")
+                        st.markdown(item.get("Description", ""))
+                    with col2:
+                        st.success(
+                            f"**🎵 Song Rec**\n\n{item.get('Song Recommendation', 'N/A')}",
+                            icon="🎧",
+                        )
+        else:
+            st.info("No recommendations found or error parsing results.")
+
 
 try:
-    gl = get_gitlab_client()
-    project_map = fetch_all_projects()
+    importlib.reload(helper)
+    gl = helper.get_gitlab_client()
+    project_map = helper.fetch_all_projects()
+    # print(f"DEBUG: Fetched {len(project_map)} projects")
     project_names = sorted(project_map.keys())
 
     with st.sidebar:
@@ -121,7 +110,9 @@ try:
 
         # Pattern Filtering Logic
         repo_filter = st.text_input(
-            "Filter Repos by Name/Path", "", help="e.g. 'data-platform' or 'marketing'"
+            "Filter Repos by Name/Path",
+            "",
+            help="e.g. 'data-platform' or 'marketing'",
         )
 
         filtered_options = [
@@ -130,7 +121,8 @@ try:
 
         # Select All Logic
         select_all = st.checkbox(
-            f"Select all {len(filtered_options)} filtered repos", value=False
+            f"Select all {len(filtered_options)} filtered repos",
+            value=False,
         )
 
         selected_project_names = st.multiselect(
@@ -141,69 +133,79 @@ try:
 
         st.header("2. Timeframe")
         timeframe = st.selectbox(
-            "Select Range", ["Last Day", "Last Week", "Last Month"]
+            "Select Range",
+            ["Last Day", "Last Week", "Last Month"],
         )
 
+        if st.button("Fetch Merge Requests", type="primary"):
+            st.session_state["fetch_active"] = True
+            st.session_state["locked_projects"] = selected_project_names
+            st.session_state["locked_timeframe"] = timeframe
+
     # --- Main Action Area ---
-    if st.button("Generate Digest", type="primary"):
-        if not selected_project_names:
+    if st.session_state.get("fetch_active"):
+        active_projects = st.session_state.get("locked_projects")
+        active_timeframe = st.session_state.get("locked_timeframe")
+
+        if not active_projects:
             st.warning("Please select at least one repository.")
         else:
-            created_after = get_start_date(timeframe)
-            digest_data = []
-
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            for i, name in enumerate(selected_project_names):
-                percent_complete = int((i / len(selected_project_names)) * 100)
-                progress_bar.progress(percent_complete)
-                status_text.text(f"Scanning {name}...")
-
-                pid = project_map[name]
-                project = gl.projects.get(pid)
-
-                # Fetching Merged MRs
-                mrs = project.mergerequests.list(
-                    state="merged", updated_after=created_after, get_all=True
-                )
-
-                for mr in mrs:
-                    # Renovate Bot Exclusion
-                    author_username = mr.author.get("username", "").lower()
-                    author_name = mr.author.get("name", "").lower()
-                    if "renovate" in author_username or "renovate" in author_name:
-                        continue
-
-                    changes = mr.changes()
-                    digest_data.append(
-                        {
-                            "repo": name,
-                            "title": mr.title,
-                            "description": mr.description,
-                            "author": mr.author["name"],
-                            "merged_at": mr.merged_at,
-                            "changes_count": len(changes["changes"]),
-                            "diffs": [c["diff"] for c in changes["changes"]],
-                        }
-                    )
-
-            progress_bar.empty()
-            status_text.empty()
+            digest_data = helper.fetch_merge_requests(active_projects, active_timeframe)
 
             if not digest_data:
                 st.info("No activity found for these repos in the selected timeframe.")
             else:
-                with st.spinner("Analyzing data..."):
-                    final_report = summarize_with_gemini(digest_data, timeframe)
+                st.subheader("📊 Activity Overview")
+                df = pd.DataFrame(digest_data)
+                col1, col2 = st.columns(2)
 
-                st.markdown("---")
-                st.markdown(final_report)
-                st.download_button(
-                    "Download Digest (.md)",
-                    final_report,
-                    file_name=f"digest_{datetime.now().strftime('%Y%m%d')}.md",
-                )
+                with col1:
+                    author_counts = (
+                        df["author"]
+                        .value_counts()
+                        .head(10)
+                        .rename_axis("author")
+                        .reset_index(name="count")
+                    )
+                    chart_author = (
+                        alt.Chart(author_counts)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X("count", title="MR Count"),
+                            y=alt.Y("author", sort="-x", title=None),
+                            tooltip=["author", "count"],
+                            color=alt.Color("count", legend=None),
+                        )
+                        .properties(title="Top 10 Authors")
+                    )
+                    st.altair_chart(chart_author, use_container_width=True)
+
+                with col2:
+                    repo_counts = (
+                        df["repo"]
+                        .value_counts()
+                        .head(10)
+                        .rename_axis("repo")
+                        .reset_index(name="count")
+                    )
+                    chart_repo = (
+                        alt.Chart(repo_counts)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X("count", title="MR Count"),
+                            y=alt.Y("repo", sort="-x", title=None),
+                            tooltip=["repo", "count"],
+                            color=alt.Color("count", legend=None),
+                        )
+                        .properties(title="Top 10 Repositories")
+                    )
+                    st.altair_chart(chart_repo, use_container_width=True)
+
+                tab1, tab2 = st.tabs(["Executive Digest", "Auto Snitch Tool"])
+                with tab1:
+                    render_digest_tab(digest_data, active_timeframe)
+                with tab2:
+                    render_snitch_tab(digest_data)
 
 except Exception as e:
     st.error(f"Error: {e}")
