@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import google.generativeai as genai
 import json
+import concurrent.futures
 
 load_dotenv(override=True)
 
@@ -38,66 +39,116 @@ def fetch_all_projects():
 
 
 # -- Helper Function ---
-def get_start_date(timeframe_label):
+def get_date_range(timeframe_label):
     now = datetime.now()
-    if timeframe_label == "Last Day":
-        delta = timedelta(days=1)
-    elif timeframe_label == "Last Week":
-        delta = timedelta(weeks=1)
-    else:  # Last Month
-        delta = timedelta(days=30)
-    return (now - delta).isoformat()
+    start_date = None
+    end_date = None
+
+    if timeframe_label in ["Last 24 Hours", "Last Full Day"]:
+        days = 1
+    elif timeframe_label in ["Last 7 Days", "Last Full Week"]:
+        days = 7
+    else:  # Last 30 Days, Last Full Month
+        days = 30
+
+    if "Full" in timeframe_label:
+        end_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = end_date - timedelta(days=days)
+    else:
+        start_date = now - timedelta(days=days)
+
+    return start_date.isoformat(), end_date.isoformat() if end_date else None
+
+
+def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
+    """Helper function to fetch MRs for a single project (runs in thread)."""
+    project_data = []
+    try:
+        # lazy=True avoids an API call to get project details
+        project = gl.projects.get(pid, lazy=True)
+
+        kwargs = {
+            "state": "merged",
+            "updated_after": updated_after,
+            "get_all": True,
+        }
+        if updated_before:
+            kwargs["updated_before"] = updated_before
+
+        mrs = project.mergerequests.list(**kwargs)
+
+        for mr in mrs:
+            # Renovate Bot Exclusion
+            author_username = mr.author.get("username", "").lower()
+            author_name = mr.author.get("name", "").lower()
+            if "renovate" in author_username or "renovate" in author_name:
+                continue
+
+            changes = mr.changes()
+            project_data.append(
+                {
+                    "repo": name,
+                    "title": mr.title,
+                    "url": mr.web_url,
+                    "description": mr.description,
+                    "author": mr.author["name"],
+                    "merged_at": mr.merged_at,
+                    "created_at": mr.created_at,
+                    "changes_count": len(changes["changes"]),
+                    "diffs": [c["diff"] for c in changes["changes"]],
+                    "reviewers": (
+                        [r["name"] for r in mr.reviewers]
+                        if hasattr(mr, "reviewers")
+                        else []
+                    ),
+                    "labels": mr.labels,
+                    "comments": mr.user_notes_count,
+                }
+            )
+    except Exception as e:
+        print(f"Error fetching {name}: {e}")
+
+    return project_data
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_merge_requests(project_names, timeframe):
     gl = get_gitlab_client()
     project_map = fetch_all_projects()
-    created_after = get_start_date(timeframe)
+    updated_after, updated_before = get_date_range(timeframe)
     digest_data = []
+
+    # Filter to valid projects first
+    valid_projects = [
+        (name, project_map[name]) for name in project_names if name in project_map
+    ]
+    total_projects = len(valid_projects)
+
+    if total_projects == 0:
+        return []
 
     progress_bar = st.progress(0)
     status_text = st.empty()
-    total_projects = len(project_names)
 
-    for i, name in enumerate(project_names):
-        progress_bar.progress(i / total_projects)
-        status_text.text(f"Fetching {name}...")
+    # Use ThreadPoolExecutor for parallel fetching
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_name = {
+            executor.submit(
+                _fetch_single_project_mrs, gl, pid, name, updated_after, updated_before
+            ): name
+            for name, pid in valid_projects
+        }
 
-        if name not in project_map:
-            continue
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_name)):
+            name = future_to_name[future]
+            progress_bar.progress((i + 1) / total_projects)
+            status_text.text(f"Fetching {name} ({i + 1}/{total_projects})...")
 
-        pid = project_map[name]
-        try:
-            project = gl.projects.get(pid)
-            # Fetching Merged MRs
-            mrs = project.mergerequests.list(
-                state="merged", updated_after=created_after, get_all=True
-            )
-
-            for mr in mrs:
-                # Renovate Bot Exclusion
-                author_username = mr.author.get("username", "").lower()
-                author_name = mr.author.get("name", "").lower()
-                if "renovate" in author_username or "renovate" in author_name:
-                    continue
-
-                changes = mr.changes()
-                digest_data.append(
-                    {
-                        "repo": name,
-                        "title": mr.title,
-                        "url": mr.web_url,
-                        "description": mr.description,
-                        "author": mr.author["name"],
-                        "merged_at": mr.merged_at,
-                        "changes_count": len(changes["changes"]),
-                        "diffs": [c["diff"] for c in changes["changes"]],
-                    }
-                )
-        except Exception as e:
-            print(f"Error fetching {name}: {e}")
-            continue
+            try:
+                data = future.result()
+                digest_data.extend(data)
+            except Exception as e:
+                print(f"Exception in thread for {name}: {e}")
 
     progress_bar.empty()
     status_text.empty()
@@ -152,13 +203,17 @@ CODE SNIPPET:
     
     Output a strict JSON object with the following keys:
     - "executive_summary": 1-2 sentences on overall velocity. Mention that {total_mrs} MRs were merged.
-    - "impactful_changes": A list of objects (max 5), each containing:
+    - "impactful_changes": A list of objects (max 5) focusing strictly on BUSINESS VALUE and USER IMPACT.
         - "title": A concise, business-friendly title summarizing the impact (do not use the raw MR title).
-        - "description": A focus on the "Why" (business/technical value).
+        - "description": A focus on the "Why" (business value).
         - "url": The MR URL.
         - "author": The MR Author's name.
         - "context_area": Inferred business area, application name, or technology (e.g. "Payments", "Frontend", "Infrastructure").
-    - "technical_highlights": A list of strings noting interesting architectural choices or refactors.
+    - "technical_highlights": A list of strings noting interesting architectural choices, refactors, or library updates.
+        - Focus strictly on the "How" (engineering details).
+        - Do NOT repeat high-level features listed in "impactful_changes".
+        - Mention which author or authors worked on the changes.
+        - The list can include up to 10 items.
     
     Do not use Markdown formatting (no ```json blocks). Just output the raw JSON.
 
