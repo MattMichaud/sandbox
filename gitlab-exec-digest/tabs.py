@@ -154,6 +154,10 @@ def render_team_stats_tab(digest_data):
             .rename_axis("repo")
             .reset_index(name="count")
         )
+        # Map repo name to repo_url
+        repo_url_map = df[["repo", "repo_url"]].drop_duplicates().set_index("repo")
+        repo_counts = repo_counts.join(repo_url_map, on="repo")
+
         repo_counts["repo_short"] = repo_counts["repo"].apply(
             lambda x: x.split("/")[-1]
         )
@@ -164,7 +168,9 @@ def render_team_stats_tab(digest_data):
                 x=alt.X("count", title="MR Count"),
                 y=alt.Y("repo_short", sort="-x", title=None),
                 tooltip=["repo", "count"],
+                href="repo_url",
             )
+            .properties(usermeta={"embedOptions": {"loader": {"target": "_blank"}}})
             .configure_axis(grid=False)
             .configure_view(strokeWidth=0)
         )
@@ -201,8 +207,31 @@ def render_team_stats_tab(digest_data):
         else:
             st.caption("No reviewer data found.")
 
-    # 2. Cycle Time Distribution
+    # 2. Most Discussed MRs
     with col2:
+        st.markdown("#### 💬 Most Discussed MRs")
+        top_discussed = df.nlargest(10, "comments")
+        chart_comments = (
+            alt.Chart(top_discussed)
+            .mark_bar(color=ramsey_blue)
+            .encode(
+                x=alt.X("comments", title="Comment Count"),
+                y=alt.Y(
+                    "title", sort="-x", title=None, axis=alt.Axis(labels=False)
+                ),  # Hide labels if titles are long
+                tooltip=["title", "author", "comments"],
+                href="url",
+            )
+            .properties(usermeta={"embedOptions": {"loader": {"target": "_blank"}}})
+            .configure_axis(grid=False)
+            .configure_view(strokeWidth=0)
+        )
+        st.altair_chart(chart_comments, width="stretch")
+
+    col3, col4 = st.columns(2)
+
+    # 3. Cycle Time Distribution
+    with col3:
         st.markdown("#### ⏱️ Cycle Time (Hours)")
         chart_cycle = (
             alt.Chart(df)
@@ -216,27 +245,6 @@ def render_team_stats_tab(digest_data):
             .configure_view(strokeWidth=0)
         )
         st.altair_chart(chart_cycle, width="stretch")
-
-    col3, col4 = st.columns(2)
-
-    # 3. Most Discussed MRs
-    with col3:
-        st.markdown("#### 💬 Most Discussed MRs")
-        top_discussed = df.nlargest(10, "comments")
-        chart_comments = (
-            alt.Chart(top_discussed)
-            .mark_bar(color=ramsey_blue)
-            .encode(
-                x=alt.X("comments", title="Comment Count"),
-                y=alt.Y(
-                    "title", sort="-x", title=None, axis=alt.Axis(labels=False)
-                ),  # Hide labels if titles are long
-                tooltip=["title", "author", "comments"],
-            )
-            .configure_axis(grid=False)
-            .configure_view(strokeWidth=0)
-        )
-        st.altair_chart(chart_comments, width="stretch")
 
     # 4. Throughput by Day
     with col4:

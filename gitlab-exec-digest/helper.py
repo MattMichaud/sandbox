@@ -41,23 +41,32 @@ def fetch_all_projects():
 # -- Helper Function ---
 def get_date_range(timeframe_label):
     now = datetime.now()
-    start_date = None
-    end_date = None
 
-    if timeframe_label in ["Last 24 Hours", "Last Full Day"]:
-        days = 1
-    elif timeframe_label in ["Last 7 Days", "Last Full Week"]:
-        days = 7
-    else:  # Last 30 Days, Last Full Month
-        days = 30
-
-    if "Full" in timeframe_label:
+    if timeframe_label == "Last Full Day":
         end_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_date = end_date - timedelta(days=days)
-    else:
-        start_date = now - timedelta(days=days)
+        start_date = end_date - timedelta(days=1)
+        return start_date.isoformat(), end_date.isoformat()
 
-    return start_date.isoformat(), end_date.isoformat() if end_date else None
+    elif timeframe_label == "Last Full Work Week":
+        # Previous Sunday through Saturday
+        today = now.date()
+        # Calculate days to subtract to get to last Saturday
+        days_to_last_sat = (today.weekday() + 2) % 7
+        if days_to_last_sat == 0:
+            days_to_last_sat = 7
+        last_saturday = today - timedelta(days=days_to_last_sat)
+        end_dt = datetime.combine(
+            last_saturday + timedelta(days=1), datetime.min.time()
+        )
+        start_dt = end_dt - timedelta(days=7)
+        return start_dt.isoformat(), end_dt.isoformat()
+
+    elif timeframe_label == "Last 30 Days":
+        end_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = end_date - timedelta(days=30)
+        return start_date.isoformat(), end_date.isoformat()
+
+    return None, None
 
 
 def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
@@ -88,6 +97,7 @@ def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
             project_data.append(
                 {
                     "repo": name,
+                    "repo_url": mr.web_url.split("/-/")[0],
                     "title": mr.title,
                     "url": mr.web_url,
                     "description": mr.description,
@@ -112,10 +122,9 @@ def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_merge_requests(project_names, timeframe):
+def fetch_merge_requests(project_names, updated_after, updated_before):
     gl = get_gitlab_client()
     project_map = fetch_all_projects()
-    updated_after, updated_before = get_date_range(timeframe)
     digest_data = []
 
     # Filter to valid projects first
