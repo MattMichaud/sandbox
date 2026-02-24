@@ -14,7 +14,8 @@ A Streamlit app that fetches GitLab Merge Request data and uses **Gemini 3 Flash
 
 ```bash
 cd gitlab-exec-digest
-streamlit run app.py
+poetry install      # first time / after dependency changes
+poetry run streamlit run app.py
 ```
 
 ### Environment Setup

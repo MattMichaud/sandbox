@@ -38,7 +38,7 @@ LLM results in both Tab 2 and Tab 3 are persisted in session state and cleared a
 
 ### Prerequisites
 ```
-pip install streamlit python-gitlab python-dotenv google-generativeai pandas altair
+poetry install
 ```
 
 ### Environment Variables
@@ -54,5 +54,5 @@ GEMINI_API_KEY=your_gemini_api_key
 
 ### Run
 ```bash
-streamlit run app.py
+poetry run streamlit run app.py
 ```
