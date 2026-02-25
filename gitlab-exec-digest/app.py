@@ -1,9 +1,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
-import altair as alt
-import helper
-import importlib
+import gitlab_data
 import tabs
 
 
@@ -13,9 +11,8 @@ st.title("🚀 Merge Request Explorer")
 
 
 try:
-    importlib.reload(helper)
-    gl = helper.get_gitlab_client()
-    project_map = helper.fetch_all_projects()
+    gl = gitlab_data.get_gitlab_client()
+    project_map = gitlab_data.fetch_all_projects()
     # print(f"DEBUG: Fetched {len(project_map)} projects")
     project_names = sorted(project_map.keys())
 
@@ -78,7 +75,7 @@ try:
                 st.session_state["locked_start"] = s
                 st.session_state["locked_end"] = e
             else:
-                s, e = helper.get_date_range(timeframe)
+                s, e = gitlab_data.get_date_range(timeframe)
                 st.session_state["locked_start"] = s
                 st.session_state["locked_end"] = e
 
@@ -96,7 +93,7 @@ try:
         if not active_projects:
             st.warning("Please select at least one repository.")
         else:
-            digest_data = helper.fetch_merge_requests(
+            digest_data = gitlab_data.fetch_merge_requests(
                 active_projects, active_start, active_end
             )
 

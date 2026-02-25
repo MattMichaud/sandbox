@@ -2,14 +2,14 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 import altair as alt
-import helper
+import gemini
 
 
 @st.fragment
 def render_digest_tab(digest_data, timeframe):
     if st.button("Generate Digest", type="primary"):
         with st.spinner("Analyzing data..."):
-            st.session_state["digest_result"] = helper.summarize_with_gemini(
+            st.session_state["digest_result"] = gemini.summarize_with_gemini(
                 digest_data, timeframe
             )
 
@@ -81,31 +81,33 @@ def render_digest_tab(digest_data, timeframe):
 def render_snitch_tab(digest_data):
     if st.button("Auto Snitch", type="primary"):
         with st.spinner("Snitching on teammates..."):
-            st.session_state["snitch_result"] = helper.auto_snitch_with_gemini(
+            st.session_state["snitch_result"] = gemini.auto_snitch_with_gemini(
                 digest_data
             )
 
-    snitch_data = st.session_state.get("snitch_result")
-
-    if snitch_data:
-        st.markdown("### 🕵️ Auto Snitch Recommendations")
-        for item in snitch_data:
-            with st.container(border=True):
-                st.markdown(
-                    f"### [{item.get('Demo Title', 'Untitled')}]({item.get('Link', '#')})"
-                )
-
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**👤 Author:** {item.get('Author', 'Unknown')}")
-                    st.markdown(item.get("Description", ""))
-                with col2:
-                    st.success(
-                        f"**🎵 Song Rec**\n\n{item.get('Song Recommendation', 'N/A')}",
-                        icon="🎧",
+    if "snitch_result" in st.session_state:
+        snitch_data = st.session_state["snitch_result"]
+        if snitch_data:
+            st.markdown("### 🕵️ Auto Snitch Recommendations")
+            for item in snitch_data:
+                with st.container(border=True):
+                    st.markdown(
+                        f"### [{item.get('Demo Title', 'Untitled')}]({item.get('Link', '#')})"
                     )
-    elif snitch_data is not None:
-        st.info("No recommendations found or error parsing results.")
+
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**👤 Author:** {item.get('Author', 'Unknown')}")
+                        st.markdown(item.get("Description", ""))
+                    with col2:
+                        st.success(
+                            f"**🎵 Song Rec**\n\n{item.get('Song Recommendation', 'N/A')}",
+                            icon="🎧",
+                        )
+        elif snitch_data is None:
+            st.error("Failed to parse Gemini response. Check the terminal logs for details.")
+        else:
+            st.info("No demo-worthy changes found for this timeframe.")
 
 
 @st.fragment
