@@ -28,15 +28,20 @@ Requires a `.env` file in `gitlab-exec-digest/` with:
 
 ### Architecture
 
-**`app.py`** — Entry point. Manages the Streamlit sidebar (repo filtering, timeframe selection, fetch trigger) and renders the three main tabs by delegating to `tabs.py`.
+**`app.py`** — Entry point. Manages the Streamlit sidebar (repo filtering, timeframe selection, fetch trigger) and renders the three main tabs by delegating to `tabs.py`. Imports from `gitlab_data` only.
 
-**`helper.py`** — All data fetching and LLM logic:
+**`gitlab_data.py`** — GitLab data layer:
 - `get_gitlab_client()` / `fetch_all_projects()` — cached GitLab connection and project map (`path_with_namespace → id`)
 - `fetch_merge_requests()` — fetches merged MRs in parallel (8 threads via `ThreadPoolExecutor`), filters out Renovate bot, and collects diffs. Cached for 5 minutes.
+- `get_date_range()` — resolves a timeframe label (e.g. "Last Full Day") into ISO 8601 start/end strings
+
+**`gemini.py`** — Gemini LLM layer:
+- `_DIGEST_SCHEMA` / `_SNITCH_SCHEMA` — `types.Schema` definitions for constrained JSON decoding
+- `_build_mr_context()` — shared helper that formats MR list into a prompt-ready context string
 - `summarize_with_gemini()` — sends MR data to Gemini and returns structured JSON with `executive_summary`, `impactful_changes`, and `technical_highlights`
 - `auto_snitch_with_gemini()` — sends MR data to Gemini and returns a JSON list of demo-worthy MRs with song recommendations
 
-**`tabs.py`** — Three `@st.fragment` renderers:
+**`tabs.py`** — Three `@st.fragment` renderers. Imports from `gemini` only.
 - `render_team_stats_tab` — Altair charts: top authors, top repos, top reviewers, cycle time histogram, merges by day of week
 - `render_digest_tab` — Triggers `summarize_with_gemini`, renders the structured executive digest, provides Markdown download
 - `render_snitch_tab` — Triggers `auto_snitch_with_gemini`, renders demo recommendations with song pairings

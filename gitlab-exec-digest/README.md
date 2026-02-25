@@ -21,18 +21,28 @@ A behavioral dashboard with six Altair charts:
 - Merge throughput by day of week
 
 ### Tab 2 — Executive Digest
-LLM-powered summary (via `gemini-3-flash-preview`, temperature 0.2) that produces:
+LLM-powered summary (via `gemini-3-flash-preview`, temperature 0.2) with schema-enforced JSON output for reliable parsing. Produces:
 - **Executive Summary**: 1–2 sentence velocity overview
 - **Impactful Changes**: Up to 5 business-value-focused highlights with author, context area, and direct MR link
 - **Technical Highlights**: Up to 10 engineering-detail callouts (architecture, refactors, library updates)
 - Download the full digest as a Markdown file
 
 ### Tab 3 — Auto Snitch Tool
-Identifies the most demo-worthy MRs for your weekly eng meeting. For each recommendation:
+LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced JSON output. Identifies the most demo-worthy MRs for your weekly eng meeting. For each recommendation:
 - Demo title, author, and description
 - Song recommendation that loosely matches the content
 
 LLM results in both Tab 2 and Tab 3 are persisted in session state and cleared automatically when new MR data is fetched.
+
+## 🗂️ Project Structure
+
+```
+gitlab-exec-digest/
+├── app.py            # Streamlit entry point — sidebar, tab layout, session state
+├── gitlab_data.py    # GitLab data layer — client, project/MR fetching, date utils
+├── gemini.py         # Gemini LLM layer — schemas, prompt building, summarization
+└── tabs.py           # Tab renderers — Team Stats, Executive Digest, Auto Snitch
+```
 
 ## 🛠️ Setup
 
