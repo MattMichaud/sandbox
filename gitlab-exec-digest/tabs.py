@@ -104,6 +104,20 @@ def render_snitch_tab(digest_data):
                             f"**🎵 Song Rec**\n\n{item.get('Song Recommendation', 'N/A')}",
                             icon="🎧",
                         )
+
+            md_report = f"# Auto Snitch - {datetime.now().strftime('%Y-%m-%d')}\n\n"
+            for item in snitch_data:
+                md_report += f"## [{item.get('Demo Title', 'Untitled')}]({item.get('Link', '#')})\n"
+                md_report += f"**Author:** {item.get('Author', 'Unknown')}\n\n"
+                md_report += f"{item.get('Description', '')}\n\n"
+                md_report += f"🎵 *{item.get('Song Recommendation', '')}*\n\n"
+
+            st.markdown("---")
+            st.download_button(
+                "Download Snitch Report (.md)",
+                md_report,
+                file_name=f"snitch_{datetime.now().strftime('%Y%m%d')}.md",
+            )
         elif snitch_data is None:
             st.error("Failed to parse Gemini response. Check the terminal logs for details.")
         else:
