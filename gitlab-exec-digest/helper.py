@@ -3,14 +3,15 @@ import gitlab
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import json
 import concurrent.futures
 
 load_dotenv(override=True)
 
 # Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+_gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 # --- GitLab Connection ---
@@ -173,16 +174,6 @@ def summarize_with_gemini(mrs_data, timeframe):
     total_mrs = len(mrs_data)
     # Use the specific model string from your capability list
     # Gemini 3 Flash is ideal for this kind of text-heavy summarization
-    generation_config = {
-        "temperature": 0.2,
-        "top_p": 0.95,
-        "top_k": 40,
-        "max_output_tokens": 4096,
-    }
-
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview", generation_config=generation_config
-    )
 
     # Build the context string
     mr_context = ""
@@ -231,7 +222,16 @@ CODE SNIPPET:
     """
 
     try:
-        response = model.generate_content(prompt)
+        response = _gemini_client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=4096,
+            ),
+        )
         text = response.text.strip()
         # Clean up markdown if the model ignores the instruction
         if text.startswith("```json"):
@@ -250,16 +250,6 @@ def auto_snitch_with_gemini(mrs_data):
     if not mrs_data:
         return []
 
-    generation_config = {
-        "temperature": 0.4,
-        "top_p": 0.95,
-        "top_k": 40,
-        "max_output_tokens": 4096,
-    }
-
-    model = genai.GenerativeModel(
-        model_name="gemini-3-flash-preview", generation_config=generation_config
-    )
 
     # Build the context string
     mr_context = ""
@@ -304,7 +294,16 @@ CODE SNIPPET:
     """
 
     try:
-        response = model.generate_content(prompt)
+        response = _gemini_client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=4096,
+            ),
+        )
         text = response.text.strip()
         # Clean up markdown if the model ignores the instruction
         if text.startswith("```json"):

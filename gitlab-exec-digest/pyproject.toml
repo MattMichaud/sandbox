@@ -11,7 +11,7 @@ streamlit = "*"
 pandas = "*"
 altair = "*"
 python-gitlab = "*"
-google-generativeai = "*"
+google-genai = "*"
 python-dotenv = "*"
 
 [build-system]
