@@ -47,11 +47,11 @@ _SNITCH_SCHEMA = types.Schema(
     items=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "Author": types.Schema(type=types.Type.STRING),
-            "Demo Title": types.Schema(type=types.Type.STRING),
-            "Description": types.Schema(type=types.Type.STRING),
-            "Song Recommendation": types.Schema(type=types.Type.STRING),
-            "Link": types.Schema(type=types.Type.STRING),
+            "author": types.Schema(type=types.Type.STRING),
+            "demo_title": types.Schema(type=types.Type.STRING),
+            "description": types.Schema(type=types.Type.STRING),
+            "song_recommendation": types.Schema(type=types.Type.STRING),
+            "link": types.Schema(type=types.Type.STRING),
         },
     ),
 )
@@ -72,17 +72,17 @@ def _generate(prompt, config, retries=3, base_delay=2):
             is_last = attempt == retries - 1
             if is_last or "503" not in str(e):
                 raise
-            delay = base_delay**attempt
+            delay = base_delay * (2**attempt)
             print(f"Gemini 503 on attempt {attempt + 1}, retrying in {delay}s…")
             time.sleep(delay)
 
 
 def _build_mr_context(mrs_data):
     """Format MR list into a prompt-ready context string."""
-    context = ""
+    parts = []
     for mr in mrs_data:
         diff_snippet = "\n".join(mr["diffs"])[:1500]
-        context += f"""
+        parts.append(f"""
 ---
 REPO: {mr['repo']}
 TITLE: {mr['title']}
@@ -91,8 +91,8 @@ URL: {mr['url']}
 DESCRIPTION: {mr['description']}
 CODE SNIPPET:
 {diff_snippet}
-"""
-    return context
+""")
+    return "".join(parts)
 
 
 def summarize_with_gemini(mrs_data, timeframe):
@@ -129,6 +129,7 @@ def summarize_with_gemini(mrs_data, timeframe):
     {mr_context}
     """
 
+    response = None
     try:
         response = _generate(
             prompt,
@@ -144,7 +145,7 @@ def summarize_with_gemini(mrs_data, timeframe):
         return json.loads(response.text)
     except Exception as e:
         print(f"Summarization failed with Gemini 3: {str(e)}")
-        print(f"Raw response text: {response.text if 'response' in locals() else 'no response'}")
+        print(f"Raw response text: {response.text if response else 'no response'}")
         return None
 
 
@@ -168,16 +169,17 @@ def auto_snitch_with_gemini(mrs_data):
 
     Output a strict JSON list of objects.
     Each object must have the following keys:
-    - "Author": The author's name
-    - "Demo Title": A catchy title for the demo
-    - "Description": A short blurb explaining what is cool/interesting.
-    - "Song Recommendation": A song (Artist - Title) that loosely ties to the content of the demo.
-    - "Link": The URL to the MR.
+    - "author": The author's name
+    - "demo_title": A catchy title for the demo
+    - "description": A short blurb explaining what is cool/interesting.
+    - "song_recommendation": A song (Artist - Title) that loosely ties to the content of the demo.
+    - "link": The URL to the MR.
 
     DATA:
     {mr_context}
     """
 
+    response = None
     try:
         response = _generate(
             prompt,
@@ -193,5 +195,5 @@ def auto_snitch_with_gemini(mrs_data):
         return json.loads(response.text)
     except Exception as e:
         print(f"Auto Snitch failed: {str(e)}")
-        print(f"Raw response text: {response.text if 'response' in locals() else 'no response'}")
+        print(f"Raw response text: {response.text if response else 'no response'}")
         return None

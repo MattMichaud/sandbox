@@ -31,7 +31,7 @@ def fetch_all_projects():
     return {p.path_with_namespace: p.id for p in projects}
 
 
-def get_date_range(timeframe_label):
+def get_date_range(timeframe_label, custom_start=None, custom_end=None):
     now = datetime.now()
 
     if timeframe_label == "Last Full Day":
@@ -41,13 +41,12 @@ def get_date_range(timeframe_label):
 
     elif timeframe_label == "Last Full Work Week":
         today = now.date()
-        days_to_last_sat = (today.weekday() + 2) % 7
-        if days_to_last_sat == 0:
-            days_to_last_sat = 7
-        last_saturday = today - timedelta(days=days_to_last_sat)
-        end_dt = datetime.combine(
-            last_saturday + timedelta(days=1), datetime.min.time()
-        )
+        # Find the most recently completed Saturday.
+        # weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
+        # If today is Saturday, use the previous one (not the current in-progress day).
+        days_since_sat = (today.weekday() - 5) % 7 or 7
+        last_saturday = today - timedelta(days=days_since_sat)
+        end_dt = datetime.combine(last_saturday + timedelta(days=1), datetime.min.time())
         start_dt = end_dt - timedelta(days=7)
         return start_dt.isoformat(), end_dt.isoformat()
 
@@ -56,7 +55,14 @@ def get_date_range(timeframe_label):
         start_date = end_date - timedelta(days=30)
         return start_date.isoformat(), end_date.isoformat()
 
-    return None, None
+    elif timeframe_label == "Custom Range":
+        if custom_start is None or custom_end is None:
+            raise ValueError("Custom Range requires both custom_start and custom_end")
+        s = datetime.combine(custom_start, datetime.min.time()).isoformat()
+        e = datetime.combine(custom_end + timedelta(days=1), datetime.min.time()).isoformat()
+        return s, e
+
+    raise ValueError(f"Unknown timeframe: {timeframe_label!r}")
 
 
 def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
@@ -89,7 +95,7 @@ def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
                     "title": mr.title,
                     "url": mr.web_url,
                     "description": mr.description,
-                    "author": mr.author["name"],
+                    "author": mr.author.get("name", "Unknown"),
                     "merged_at": mr.merged_at,
                     "created_at": mr.created_at,
                     "changes_count": len(changes["changes"]),
@@ -109,8 +115,7 @@ def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
     return project_data
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_merge_requests(project_names, updated_after, updated_before):
+def fetch_merge_requests(project_names, updated_after, updated_before, progress_callback=None):
     gl = get_gitlab_client()
     project_map = fetch_all_projects()
     digest_data = []
@@ -123,9 +128,6 @@ def fetch_merge_requests(project_names, updated_after, updated_before):
     if total_projects == 0:
         return []
 
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         future_to_name = {
             executor.submit(
@@ -136,16 +138,15 @@ def fetch_merge_requests(project_names, updated_after, updated_before):
 
         for i, future in enumerate(concurrent.futures.as_completed(future_to_name)):
             name = future_to_name[future]
-            progress_bar.progress((i + 1) / total_projects)
-            status_text.text(f"Fetching {name} ({i + 1}/{total_projects})...")
-
+            if progress_callback:
+                progress_callback(
+                    (i + 1) / total_projects,
+                    f"Fetching {name} ({i + 1}/{total_projects})...",
+                )
             try:
                 data = future.result()
                 digest_data.extend(data)
             except Exception as e:
                 print(f"Exception in thread for {name}: {e}")
-
-    progress_bar.empty()
-    status_text.empty()
 
     return digest_data

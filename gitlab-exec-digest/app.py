@@ -1,8 +1,11 @@
 import streamlit as st
 from datetime import datetime, timedelta
+import time
 import pandas as pd
 import gitlab_data
 import tabs
+
+_MR_CACHE_TTL = 300  # seconds
 
 
 # --- App UI ---
@@ -62,26 +65,18 @@ try:
                 custom_start, custom_end = date_range
 
         if st.button("Fetch Merge Requests", type="primary"):
-            st.session_state["fetch_active"] = True
-            st.session_state["locked_projects"] = selected_project_names
-            st.session_state["locked_timeframe"] = timeframe
-
-            # Resolve Dates
-            if timeframe == "Custom Range" and custom_start and custom_end:
-                s = datetime.combine(custom_start, datetime.min.time()).isoformat()
-                e = datetime.combine(
-                    custom_end + timedelta(days=1), datetime.min.time()
-                ).isoformat()
-                st.session_state["locked_start"] = s
-                st.session_state["locked_end"] = e
+            if timeframe == "Custom Range" and (not custom_start or not custom_end):
+                st.warning("Please select both start and end dates for Custom Range.")
             else:
-                s, e = gitlab_data.get_date_range(timeframe)
+                s, e = gitlab_data.get_date_range(timeframe, custom_start, custom_end)
+                st.session_state["fetch_active"] = True
+                st.session_state["locked_projects"] = selected_project_names
+                st.session_state["locked_timeframe"] = timeframe
                 st.session_state["locked_start"] = s
                 st.session_state["locked_end"] = e
-
-            # Clear previous LLM generations when fetching new data
-            st.session_state.pop("digest_result", None)
-            st.session_state.pop("snitch_result", None)
+                # Clear previous LLM generations when fetching new data
+                st.session_state.pop("digest_result", None)
+                st.session_state.pop("snitch_result", None)
 
     # --- Main Action Area ---
     if st.session_state.get("fetch_active"):
@@ -93,9 +88,30 @@ try:
         if not active_projects:
             st.warning("Please select at least one repository.")
         else:
-            digest_data = gitlab_data.fetch_merge_requests(
-                active_projects, active_start, active_end
-            )
+            cache_key = (tuple(sorted(active_projects)), active_start, active_end)
+            cached = st.session_state.get("mr_cache")
+            if (
+                cached is not None
+                and cached["key"] == cache_key
+                and time.time() - cached["time"] < _MR_CACHE_TTL
+            ):
+                digest_data = cached["data"]
+            else:
+                progress_bar = st.progress(0, text="Fetching merge requests...")
+
+                def _on_progress(fraction, text):
+                    progress_bar.progress(fraction, text=text)
+
+                digest_data = gitlab_data.fetch_merge_requests(
+                    active_projects, active_start, active_end,
+                    progress_callback=_on_progress,
+                )
+                progress_bar.empty()
+                st.session_state["mr_cache"] = {
+                    "key": cache_key,
+                    "time": time.time(),
+                    "data": digest_data,
+                }
 
             if not digest_data:
                 st.info("No activity found for these repos in the selected timeframe.")
@@ -120,7 +136,7 @@ try:
                     ["Team Stats", "Executive Digest", "Auto Snitch Tool"]
                 )
                 with tab1:
-                    tabs.render_team_stats_tab(digest_data)
+                    tabs.render_team_stats_tab(df)
                 with tab2:
                     tabs.render_digest_tab(digest_data, active_timeframe)
                 with tab3:

@@ -5,6 +5,12 @@ import altair as alt
 import gemini
 
 
+def _mr_label(url):
+    """Extract a display label (!123) from a GitLab MR URL."""
+    mr_num = url.rstrip("/").split("/")[-1]
+    return f"!{mr_num}" if mr_num.isdigit() else "MR"
+
+
 @st.fragment
 def render_digest_tab(digest_data, timeframe):
     if st.button("Generate Digest", type="primary"):
@@ -13,10 +19,10 @@ def render_digest_tab(digest_data, timeframe):
                 digest_data, timeframe
             )
 
-    digest_json = st.session_state.get("digest_result")
-
-    if digest_json is None:
+    if "digest_result" not in st.session_state:
         return
+
+    digest_json = st.session_state["digest_result"]
 
     if not digest_json:
         st.error("Failed to generate digest. Please try again.")
@@ -48,10 +54,8 @@ def render_digest_tab(digest_data, timeframe):
     if highlights:
         for item in highlights:
             url = item.get("url", "#")
-            mr_num = url.rstrip("/").split("/")[-1]
-            mr_label = f"!{mr_num}" if mr_num.isdigit() else "MR"
             st.markdown(
-                f"- {item.get('description', '')} — *{item.get('author', 'Unknown')}* · [**{mr_label}**]({url})"
+                f"- {item.get('description', '')} — *{item.get('author', 'Unknown')}* · [**{_mr_label(url)}**]({url})"
             )
     else:
         st.markdown("_No specific technical highlights._")
@@ -65,9 +69,7 @@ def render_digest_tab(digest_data, timeframe):
     md_report += "\n## Technical Highlights\n"
     for item in highlights:
         url = item.get("url", "#")
-        mr_num = url.rstrip("/").split("/")[-1]
-        mr_label = f"!{mr_num}" if mr_num.isdigit() else "MR"
-        md_report += f"- {item.get('description', '')} — *{item.get('author', 'Unknown')}* · [{mr_label}]({url})\n"
+        md_report += f"- {item.get('description', '')} — *{item.get('author', 'Unknown')}* · [{_mr_label(url)}]({url})\n"
 
     st.markdown("---")
     st.download_button(
@@ -85,54 +87,60 @@ def render_snitch_tab(digest_data):
                 digest_data
             )
 
-    if "snitch_result" in st.session_state:
-        snitch_data = st.session_state["snitch_result"]
-        if snitch_data:
-            st.markdown("### 🕵️ Auto Snitch Recommendations")
-            for item in snitch_data:
-                with st.container(border=True):
-                    st.markdown(
-                        f"### [{item.get('Demo Title', 'Untitled')}]({item.get('Link', '#')})"
-                    )
+    if "snitch_result" not in st.session_state:
+        return
 
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown(f"**👤 Author:** {item.get('Author', 'Unknown')}")
-                        st.markdown(item.get("Description", ""))
-                    with col2:
-                        st.success(
-                            f"**🎵 Song Rec**\n\n{item.get('Song Recommendation', 'N/A')}",
-                            icon="🎧",
-                        )
+    snitch_data = st.session_state["snitch_result"]
 
-            md_report = f"# Auto Snitch - {datetime.now().strftime('%Y-%m-%d')}\n\n"
-            for item in snitch_data:
-                md_report += f"## [{item.get('Demo Title', 'Untitled')}]({item.get('Link', '#')})\n"
-                md_report += f"**Author:** {item.get('Author', 'Unknown')}\n\n"
-                md_report += f"{item.get('Description', '')}\n\n"
-                md_report += f"🎵 *{item.get('Song Recommendation', '')}*\n\n"
+    if snitch_data is None:
+        st.error("Failed to parse Gemini response. Check the terminal logs for details.")
+        return
 
-            st.markdown("---")
-            st.download_button(
-                "Download Snitch Report (.md)",
-                md_report,
-                file_name=f"snitch_{datetime.now().strftime('%Y%m%d')}.md",
+    if not snitch_data:
+        st.info("No demo-worthy changes found for this timeframe.")
+        return
+
+    st.markdown("### 🕵️ Auto Snitch Recommendations")
+    for item in snitch_data:
+        with st.container(border=True):
+            st.markdown(
+                f"### [{item.get('demo_title', 'Untitled')}]({item.get('link', '#')})"
             )
-        elif snitch_data is None:
-            st.error("Failed to parse Gemini response. Check the terminal logs for details.")
-        else:
-            st.info("No demo-worthy changes found for this timeframe.")
+
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"**👤 Author:** {item.get('author', 'Unknown')}")
+                st.markdown(item.get("description", ""))
+            with col2:
+                st.success(
+                    f"**🎵 Song Rec**\n\n{item.get('song_recommendation', 'N/A')}",
+                    icon="🎧",
+                )
+
+    md_report = f"# Auto Snitch - {datetime.now().strftime('%Y-%m-%d')}\n\n"
+    for item in snitch_data:
+        md_report += f"## [{item.get('demo_title', 'Untitled')}]({item.get('link', '#')})\n"
+        md_report += f"**Author:** {item.get('author', 'Unknown')}\n\n"
+        md_report += f"{item.get('description', '')}\n\n"
+        md_report += f"🎵 *{item.get('song_recommendation', '')}*\n\n"
+
+    st.markdown("---")
+    st.download_button(
+        "Download Snitch Report (.md)",
+        md_report,
+        file_name=f"snitch_{datetime.now().strftime('%Y%m%d')}.md",
+    )
 
 
 @st.fragment
-def render_team_stats_tab(digest_data):
+def render_team_stats_tab(df):
     st.markdown("### 📈 Team Behavior Dashboard")
 
-    if not digest_data:
+    if df.empty:
         st.info("No data available.")
         return
 
-    df = pd.DataFrame(digest_data)
+    df = df.copy()
 
     # Pre-processing
     df["created_at"] = pd.to_datetime(df["created_at"])
