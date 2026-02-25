@@ -47,7 +47,12 @@ def render_digest_tab(digest_data, timeframe):
     highlights = digest_json.get("technical_highlights", [])
     if highlights:
         for item in highlights:
-            st.markdown(f"- {item}")
+            url = item.get("url", "#")
+            mr_num = url.rstrip("/").split("/")[-1]
+            mr_label = f"!{mr_num}" if mr_num.isdigit() else "MR"
+            st.markdown(
+                f"- {item.get('description', '')} — *{item.get('author', 'Unknown')}* · [**{mr_label}**]({url})"
+            )
     else:
         st.markdown("_No specific technical highlights._")
 
@@ -59,7 +64,10 @@ def render_digest_tab(digest_data, timeframe):
         md_report += f"- **[{change.get('title', 'Untitled')}]({change.get('url', '#')})** - {change.get('context_area', 'General')} (by {change.get('author', 'Unknown')}): {change.get('description', '')}\n"
     md_report += "\n## Technical Highlights\n"
     for item in highlights:
-        md_report += f"- {item}\n"
+        url = item.get("url", "#")
+        mr_num = url.rstrip("/").split("/")[-1]
+        mr_label = f"!{mr_num}" if mr_num.isdigit() else "MR"
+        md_report += f"- {item.get('description', '')} — *{item.get('author', 'Unknown')}* · [{mr_label}]({url})\n"
 
     st.markdown("---")
     st.download_button(

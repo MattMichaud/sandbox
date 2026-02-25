@@ -6,12 +6,31 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import json
+import time
 import concurrent.futures
 
 load_dotenv(override=True)
 
 # Configure Gemini
 _gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+
+def _gemini_generate(prompt, config, retries=3, base_delay=2):
+    """Call Gemini with exponential backoff on 503 / transient errors."""
+    for attempt in range(retries):
+        try:
+            return _gemini_client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=prompt,
+                config=config,
+            )
+        except Exception as e:
+            is_last = attempt == retries - 1
+            if is_last or "503" not in str(e):
+                raise
+            delay = base_delay ** attempt
+            print(f"Gemini 503 on attempt {attempt + 1}, retrying in {delay}s…")
+            time.sleep(delay)
 
 
 # --- GitLab Connection ---
@@ -209,11 +228,11 @@ CODE SNIPPET:
         - "url": The MR URL.
         - "author": The MR Author's name.
         - "context_area": Inferred business area, application name, or technology (e.g. "Payments", "Frontend", "Infrastructure").
-    - "technical_highlights": A list of strings noting interesting architectural choices, refactors, or library updates.
-        - Focus strictly on the "How" (engineering details).
-        - Do NOT repeat high-level features listed in "impactful_changes".
-        - Mention which author or authors worked on the changes.
-        - The list can include up to 10 items.
+    - "technical_highlights": A list of objects (up to 10) noting interesting architectural choices, refactors, or library updates.
+        - "title": A short, specific title describing the technical change.
+        - "description": Focus strictly on the "How" (engineering details). Do NOT repeat high-level features listed in "impactful_changes".
+        - "url": The URL of the MR this change belongs to.
+        - "author": The name of the author who made the change.
     
     Do not use Markdown formatting (no ```json blocks). Just output the raw JSON.
 
@@ -222,10 +241,9 @@ CODE SNIPPET:
     """
 
     try:
-        response = _gemini_client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt,
-            config=types.GenerateContentConfig(
+        response = _gemini_generate(
+            prompt,
+            types.GenerateContentConfig(
                 temperature=0.2,
                 top_p=0.95,
                 top_k=40,
@@ -294,10 +312,9 @@ CODE SNIPPET:
     """
 
     try:
-        response = _gemini_client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt,
-            config=types.GenerateContentConfig(
+        response = _gemini_generate(
+            prompt,
+            types.GenerateContentConfig(
                 temperature=0.4,
                 top_p=0.95,
                 top_k=40,
