@@ -1,8 +1,11 @@
+import base64
 import streamlit as st
+import streamlit.components.v1 as st_components
 from datetime import datetime
 import pandas as pd
 import altair as alt
 import gemini
+import podcast
 
 
 def _mr_label(url):
@@ -304,3 +307,103 @@ def render_team_stats_tab(df):
             .configure_view(strokeWidth=0)
         )
         st.altair_chart(chart_days, width="stretch")
+
+
+@st.fragment
+def render_podcast_tab(digest_data):
+    st.markdown("### 🎙️ Podcast Generator")
+    st.caption("Generate a two-host conversational podcast from your MR data.")
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        _PRESET_ROLES = [
+            "Engineering Leader",
+            "Data & Analytics Leader",
+            "Business Leader",
+            "Custom",
+        ]
+        selected_role = st.radio("Listener Role", options=_PRESET_ROLES, index=1)
+        if selected_role == "Custom":
+            custom_role = st.text_input(
+                "Describe the listener's role",
+                placeholder="e.g. Product Manager, CFO, Sales Leader",
+            )
+            role = custom_role.strip() or "a general professional audience"
+        else:
+            role = selected_role
+
+        length_minutes = st.radio(
+            "Podcast Length",
+            options=[1, 5, 10],
+            format_func=lambda x: f"{x} min",
+            index=1,
+        )
+        rate_percent = st.slider("Speech Rate", min_value=0, max_value=25, value=10, format="+%d%%")
+        if st.button("Generate Podcast", type="primary"):
+            with st.spinner("Writing script..."):
+                script = gemini.generate_podcast_script(
+                    digest_data, length_minutes, role, rate_percent
+                )
+            if not script:
+                st.error("Failed to generate podcast script. Please try again.")
+            else:
+                st.session_state["podcast_script"] = script
+                st.session_state.pop("podcast_audio", None)
+                with st.spinner("Synthesizing audio (this may take a moment)..."):
+                    audio_bytes = podcast.generate_podcast_audio(script, rate_percent)
+                st.session_state["podcast_audio"] = audio_bytes
+
+    with col2:
+        if "podcast_script" not in st.session_state:
+            return
+
+        script = st.session_state["podcast_script"]
+        audio_bytes = st.session_state.get("podcast_audio")
+
+        st.subheader(script.get("title", "Untitled Episode"))
+
+        if audio_bytes:
+            audio_b64 = base64.b64encode(audio_bytes).decode()
+            st_components.html(
+                f"""
+                <style>
+                  .pod-player {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+                                 font-family:sans-serif; padding:4px 0; }}
+                  audio {{ flex:1; min-width:200px; }}
+                  .speed-btn {{ padding:4px 10px; border:1px solid #ccc; border-radius:6px;
+                                background:#f0f0f0; cursor:pointer; font-size:13px; }}
+                  .speed-btn.active {{ background:#004B8D; color:#fff; border-color:#004B8D; }}
+                </style>
+                <div class="pod-player">
+                  <audio id="pod" controls>
+                    <source src="data:audio/mpeg;base64,{audio_b64}" type="audio/mpeg">
+                  </audio>
+                  <button class="speed-btn active" onclick="setSpeed(1.0, this)">1×</button>
+                  <button class="speed-btn" onclick="setSpeed(1.25, this)">1.25×</button>
+                  <button class="speed-btn" onclick="setSpeed(1.5, this)">1.5×</button>
+                </div>
+                <script>
+                  function setSpeed(rate, btn) {{
+                    document.getElementById('pod').playbackRate = rate;
+                    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                  }}
+                </script>
+                """,
+                height=64,
+            )
+            st.download_button(
+                "Download MP3",
+                data=audio_bytes,
+                file_name=f"podcast_{datetime.now().strftime('%Y%m%d')}.mp3",
+                mime="audio/mpeg",
+            )
+        else:
+            st.warning("Audio generation failed or is unavailable.")
+
+        with st.expander("Show Transcript"):
+            for seg in script.get("segments", []):
+                speaker = seg.get("speaker", "Host")
+                text = seg.get("text", "")
+                st.markdown(f"**{speaker}:** {text}")

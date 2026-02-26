@@ -149,6 +149,115 @@ def summarize_with_gemini(mrs_data, timeframe):
         return None
 
 
+_PODCAST_SCHEMA = types.Schema(
+    type=types.Type.OBJECT,
+    properties={
+        "title": types.Schema(type=types.Type.STRING),
+        "segments": types.Schema(
+            type=types.Type.ARRAY,
+            items=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "speaker": types.Schema(type=types.Type.STRING),
+                    "text": types.Schema(type=types.Type.STRING),
+                },
+            ),
+        ),
+    },
+)
+
+_WORD_COUNT_TARGETS = {
+    1: 150,
+    5: 750,
+    10: 1500,
+}
+
+_ROLE_FRAMING = {
+    "Engineering Leader": {
+        "audience": "an engineering director or VP of Engineering",
+        "emphasis": "team velocity, technical decision-making, architecture choices, code quality trends, and engineering productivity",
+        "language": "technical but strategic — assume the listener is comfortable with software engineering concepts",
+        "title_style": 'e.g. "Engineering Pulse: [topic]"',
+    },
+    "Data & Analytics Leader": {
+        "audience": "a Head of Data, Analytics Engineering Manager, or Chief Data Officer",
+        "emphasis": "data pipeline changes, analytics infrastructure, data quality, modeling improvements, and tooling updates",
+        "language": "data-fluent — use analytics and data engineering terminology naturally",
+        "title_style": 'e.g. "Analytics Engineering Brief: [topic]"',
+    },
+    "Business Leader": {
+        "audience": "a C-suite executive or business stakeholder with limited technical context",
+        "emphasis": "business outcomes, customer-facing improvements, product value, and team momentum — avoid jargon and translate technical work into business impact",
+        "language": "plain English, business-focused — no technical acronyms without explanation",
+        "title_style": 'e.g. "Tech Team Update: [topic]"',
+    },
+}
+
+
+def generate_podcast_script(mrs_data, length_minutes, role, rate_percent):
+    if not mrs_data:
+        return None
+
+    mr_context = _build_mr_context(mrs_data)
+    word_count = int(_WORD_COUNT_TARGETS.get(length_minutes, 750) * (1 + rate_percent / 100))
+
+    framing = _ROLE_FRAMING.get(role)
+    if framing:
+        role_section = f"""
+Audience & Tone:
+- This episode is intended for {framing['audience']}
+- Emphasize: {framing['emphasis']}
+- Language style: {framing['language']}
+- Title style: {framing['title_style']}
+"""
+    else:
+        role_section = f"""
+Audience & Tone:
+- This episode is intended for: {role}
+- Tailor the language, terminology, emphasis, and episode title to suit this specific audience
+"""
+
+    prompt = f"""
+You are a podcast script writer. Write a script for a conversational two-host podcast covering recent engineering work.
+
+Hosts:
+- Alex: enthusiastic, asks great questions, synthesizes ideas
+- Matt: technical expert, explains things clearly, adds color commentary
+{role_section}
+Guidelines:
+- Target approximately {word_count} words total across all segments
+- Do NOT read MR titles literally — rephrase them naturally in conversation
+- No bullet lists; pure dialogue only — this will be spoken aloud
+- Make it feel like a real podcast: banter, follow-up questions, brief tangents are welcome
+- Each segment is one speaker saying one continuous thought (a few sentences)
+- Alternate between Alex and Matt naturally
+- Start with Alex welcoming listeners and introducing the episode topic
+- End with Matt wrapping up
+
+MR DATA:
+{mr_context}
+"""
+
+    response = None
+    try:
+        response = _generate(
+            prompt,
+            types.GenerateContentConfig(
+                temperature=0.7,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=8192,
+                response_mime_type="application/json",
+                response_schema=_PODCAST_SCHEMA,
+            ),
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Podcast script generation failed: {e}")
+        print(f"Raw response: {response.text if response else 'no response'}")
+        return None
+
+
 def auto_snitch_with_gemini(mrs_data):
     if not mrs_data:
         return []

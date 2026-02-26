@@ -13,6 +13,7 @@ altair = "*"
 python-gitlab = "*"
 google-genai = "*"
 python-dotenv = "*"
+edge-tts = "*"
 
 [build-system]
 requires = ["poetry-core"]

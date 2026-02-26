@@ -75,8 +75,8 @@ try:
                 st.session_state["locked_start"] = s
                 st.session_state["locked_end"] = e
                 # Clear previous LLM generations when fetching new data
-                st.session_state.pop("digest_result", None)
-                st.session_state.pop("snitch_result", None)
+                for key in ("digest_result", "snitch_result", "podcast_script", "podcast_audio"):
+                    st.session_state.pop(key, None)
 
     # --- Main Action Area ---
     if st.session_state.get("fetch_active"):
@@ -132,8 +132,8 @@ try:
                 )
                 st.markdown(f"_:gray[Timeframe: {date_range_str}]_")
 
-                tab1, tab2, tab3 = st.tabs(
-                    ["Team Stats", "Executive Digest", "Auto Snitch Tool"]
+                tab1, tab2, tab3, tab4 = st.tabs(
+                    ["Team Stats", "Executive Digest", "Auto Snitch Tool", "Podcast"]
                 )
                 with tab1:
                     tabs.render_team_stats_tab(df)
@@ -141,6 +141,8 @@ try:
                     tabs.render_digest_tab(digest_data, active_timeframe)
                 with tab3:
                     tabs.render_snitch_tab(digest_data)
+                with tab4:
+                    tabs.render_podcast_tab(digest_data)
 
 except Exception as e:
     st.error(f"Error: {e}")

@@ -32,7 +32,20 @@ LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced
 - Demo title, author, and description
 - Song recommendation that loosely matches the content
 
-LLM results in both Tab 2 and Tab 3 are persisted in session state and cleared automatically when new MR data is fetched.
+### Tab 4 — Podcast
+Generates a two-host conversational podcast from the fetched MR data using Gemini for script generation and Microsoft Edge TTS (`edge-tts`) for free, high-quality neural speech synthesis.
+
+**Controls:**
+- **Listener Role**: Engineering Leader, Data & Analytics Leader, Business Leader, or Custom — tailors the language, emphasis, and episode title to the intended audience
+- **Podcast Length**: 1, 5, or 10 minutes (word count target scales automatically with speech rate)
+- **Speech Rate**: 0–25% speed increase above baseline (default +10%), applied to both TTS synthesis and the word count target
+
+**Output:**
+- In-browser audio player with 1×, 1.25×, 1.5× playback speed buttons
+- MP3 download
+- Expandable transcript showing the full Alex / Matt dialogue
+
+LLM results in Tabs 2, 3, and 4 are persisted in session state and cleared automatically when new MR data is fetched.
 
 ## 🗂️ Project Structure
 
@@ -40,8 +53,9 @@ LLM results in both Tab 2 and Tab 3 are persisted in session state and cleared a
 gitlab-exec-digest/
 ├── app.py            # Streamlit entry point — sidebar, tab layout, session state
 ├── gitlab_data.py    # GitLab data layer — client, project/MR fetching, date utils
-├── gemini.py         # Gemini LLM layer — schemas, prompt building, summarization
-└── tabs.py           # Tab renderers — Team Stats, Executive Digest, Auto Snitch
+├── gemini.py         # Gemini LLM layer — schemas, prompt building, all LLM calls
+├── podcast.py        # Audio layer — edge-tts synthesis and MP3 assembly
+└── tabs.py           # Tab renderers — Team Stats, Executive Digest, Auto Snitch, Podcast
 ```
 
 ## 🛠️ Setup

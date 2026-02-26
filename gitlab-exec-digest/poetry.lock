@@ -608,6 +608,27 @@ files = [
 ]
 
 [[package]]
+name = "edge-tts"
+version = "7.2.7"
+description = "Microsoft Edge's TTS"
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "edge_tts-7.2.7-py3-none-any.whl", hash = "sha256:ac11d9e834347e5ee62cbe72e8a56ffd65d3c4e795be14b1e593b72cf6480dd9"},
+    {file = "edge_tts-7.2.7.tar.gz", hash = "sha256:0127fba57a742bc48ff0a2a3b24b8324f7859260185274c335b4e54735aff325"},
+]
+
+[package.dependencies]
+aiohttp = ">=3.8.0,<4.0.0"
+certifi = ">=2023.11.17"
+tabulate = ">=0.4.4,<1.0.0"
+typing-extensions = ">=4.1.0,<5.0.0"
+
+[package.extras]
+dev = ["black", "isort", "mypy", "pylint", "types-tabulate"]
+
+[[package]]
 name = "frozenlist"
 version = "1.8.0"
 description = "A list-like structure which implements collections.abc.MutableSequence"
@@ -2316,6 +2337,21 @@ sql = ["SQLAlchemy (>=2.0.0)"]
 starlette = ["anyio (>=4.0.0)", "itsdangerous (>=2.1.2)", "python-multipart (>=0.0.10)", "starlette (>=0.40.0)", "uvicorn (>=0.30.0)", "websockets (>=12.0.0)"]
 
 [[package]]
+name = "tabulate"
+version = "0.9.0"
+description = "Pretty-print tabular data"
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "tabulate-0.9.0-py3-none-any.whl", hash = "sha256:024ca478df22e9340661486f85298cff5f6dcdba14f3813e8830015b9ed1948f"},
+    {file = "tabulate-0.9.0.tar.gz", hash = "sha256:0095b12bf5966de529c0feb1fa08671671b3368eec77d7ef7ab114be2c068b3c"},
+]
+
+[package.extras]
+widechars = ["wcwidth"]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 description = "Retry code until it succeeds"
@@ -2693,4 +2729,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "8094fc880d9c41d190e343749bee9dabd3abb41c83a4222b2e93a4e5efea7aa1"
+content-hash = "eb558f17547f55868b524fdee62de9f64fd3212695b5e724b645d8568d1a5134"
