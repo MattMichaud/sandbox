@@ -35,7 +35,7 @@ def get_date_range(timeframe_label, custom_start=None, custom_end=None):
     now = datetime.now()
 
     if timeframe_label == "Last Full Day":
-        end_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = datetime.combine(now.date(), datetime.min.time())
         start_date = end_date - timedelta(days=1)
         return start_date.isoformat(), end_date.isoformat()
 
@@ -51,7 +51,7 @@ def get_date_range(timeframe_label, custom_start=None, custom_end=None):
         return start_dt.isoformat(), end_dt.isoformat()
 
     elif timeframe_label == "Last 30 Days":
-        end_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = datetime.combine(now.date(), datetime.min.time())
         start_date = end_date - timedelta(days=30)
         return start_date.isoformat(), end_date.isoformat()
 
@@ -143,10 +143,6 @@ def fetch_merge_requests(project_names, updated_after, updated_before, progress_
                     (i + 1) / total_projects,
                     f"Fetching {name} ({i + 1}/{total_projects})...",
                 )
-            try:
-                data = future.result()
-                digest_data.extend(data)
-            except Exception as e:
-                print(f"Exception in thread for {name}: {e}")
+            digest_data.extend(future.result())
 
     return digest_data

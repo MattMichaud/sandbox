@@ -7,11 +7,23 @@ import altair as alt
 import gemini
 import podcast
 
+_PRESET_ROLES = [
+    "Engineering Leader",
+    "Data & Analytics Leader",
+    "Business Leader",
+    "Custom",
+]
+
 
 def _mr_label(url):
     """Extract a display label (!123) from a GitLab MR URL."""
     mr_num = url.rstrip("/").split("/")[-1]
     return f"!{mr_num}" if mr_num.isdigit() else "MR"
+
+
+def _configure_chart(chart):
+    """Apply standard axis and view configuration to an Altair chart."""
+    return chart.configure_axis(grid=False).configure_view(strokeWidth=0)
 
 
 @st.fragment
@@ -27,8 +39,12 @@ def render_digest_tab(digest_data, timeframe):
 
     digest_json = st.session_state["digest_result"]
 
-    if not digest_json:
+    if digest_json is None:
         st.error("Failed to generate digest. Please try again.")
+        return
+
+    if not digest_json:
+        st.info("No digest content was returned.")
         return
 
     # 1. Executive Summary
@@ -152,13 +168,12 @@ def render_team_stats_tab(df):
         df["merged_at"] - df["created_at"]
     ).dt.total_seconds() / 3600
 
-    # Ramsey Solutions Blue
     ramsey_blue = "#004B8D"
 
     # --- Top Level Stats ---
-    col_a, col_b = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    with col_a:
+    with col1:
         st.markdown("#### 👨‍💻 Top Authors")
         author_counts = (
             df["author"]
@@ -175,12 +190,10 @@ def render_team_stats_tab(df):
                 y=alt.Y("author", sort="-x", title=None),
                 tooltip=["author", "count"],
             )
-            .configure_axis(grid=False)
-            .configure_view(strokeWidth=0)
         )
-        st.altair_chart(chart_author, width="stretch")
+        st.altair_chart(_configure_chart(chart_author), width="stretch")
 
-    with col_b:
+    with col2:
         st.markdown("#### 📂 Top Repositories")
         repo_counts = (
             df["repo"]
@@ -206,16 +219,13 @@ def render_team_stats_tab(df):
                 href="repo_url",
             )
             .properties(usermeta={"embedOptions": {"loader": {"target": "_blank"}}})
-            .configure_axis(grid=False)
-            .configure_view(strokeWidth=0)
         )
-        st.altair_chart(chart_repo, width="stretch")
+        st.altair_chart(_configure_chart(chart_repo), width="stretch")
 
-    # Layout
-    col1, col2 = st.columns(2)
+    col3, col4 = st.columns(2)
 
     # 1. Top Reviewers
-    with col1:
+    with col3:
         st.markdown("#### 🏆 Top Reviewers")
         reviewers_exploded = df.explode("reviewers")
         if (
@@ -235,15 +245,13 @@ def render_team_stats_tab(df):
                     y=alt.Y("reviewer", sort="-x", title=None),
                     tooltip=["reviewer", "count"],
                 )
-                .configure_axis(grid=False)
-                .configure_view(strokeWidth=0)
             )
-            st.altair_chart(chart_reviewers, width="stretch")
+            st.altair_chart(_configure_chart(chart_reviewers), width="stretch")
         else:
             st.caption("No reviewer data found.")
 
     # 2. Most Discussed MRs
-    with col2:
+    with col4:
         st.markdown("#### 💬 Most Discussed MRs")
         top_discussed = df.nlargest(10, "comments")
         chart_comments = (
@@ -258,15 +266,13 @@ def render_team_stats_tab(df):
                 href="url",
             )
             .properties(usermeta={"embedOptions": {"loader": {"target": "_blank"}}})
-            .configure_axis(grid=False)
-            .configure_view(strokeWidth=0)
         )
-        st.altair_chart(chart_comments, width="stretch")
+        st.altair_chart(_configure_chart(chart_comments), width="stretch")
 
-    col3, col4 = st.columns(2)
+    col5, col6 = st.columns(2)
 
     # 3. Cycle Time Distribution
-    with col3:
+    with col5:
         st.markdown("#### ⏱️ Cycle Time (Hours)")
         chart_cycle = (
             alt.Chart(df)
@@ -276,13 +282,11 @@ def render_team_stats_tab(df):
                 y=alt.Y("count()", title="MR Count"),
                 tooltip=["count()"],
             )
-            .configure_axis(grid=False)
-            .configure_view(strokeWidth=0)
         )
-        st.altair_chart(chart_cycle, width="stretch")
+        st.altair_chart(_configure_chart(chart_cycle), width="stretch")
 
     # 4. Throughput by Day
-    with col4:
+    with col6:
         st.markdown("#### 📅 Merges by Day of Week")
         df["day_of_week"] = df["merged_at"].dt.day_name()
         days_order = [
@@ -303,10 +307,8 @@ def render_team_stats_tab(df):
                 y=alt.Y("count()", title="MR Count"),
                 tooltip=["day_of_week", "count()"],
             )
-            .configure_axis(grid=False)
-            .configure_view(strokeWidth=0)
         )
-        st.altair_chart(chart_days, width="stretch")
+        st.altair_chart(_configure_chart(chart_days), width="stretch")
 
 
 @st.fragment
@@ -317,12 +319,6 @@ def render_podcast_tab(digest_data):
     col1, col2 = st.columns([1, 2])
 
     with col1:
-        _PRESET_ROLES = [
-            "Engineering Leader",
-            "Data & Analytics Leader",
-            "Business Leader",
-            "Custom",
-        ]
         selected_role = st.radio("Listener Role", options=_PRESET_ROLES, index=1)
         if selected_role == "Custom":
             custom_role = st.text_input(
@@ -335,9 +331,9 @@ def render_podcast_tab(digest_data):
 
         length_minutes = st.radio(
             "Podcast Length",
-            options=[1, 5, 10],
+            options=[5, 10],
             format_func=lambda x: f"{x} min",
-            index=1,
+            index=0,
         )
         rate_percent = st.slider("Speech Rate", min_value=0, max_value=25, value=10, format="+%d%%")
         if st.button("Generate Podcast", type="primary"):

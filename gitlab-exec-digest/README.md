@@ -37,7 +37,7 @@ Generates a two-host conversational podcast from the fetched MR data using Gemin
 
 **Controls:**
 - **Listener Role**: Engineering Leader, Data & Analytics Leader, Business Leader, or Custom — tailors the language, emphasis, and episode title to the intended audience
-- **Podcast Length**: 1, 5, or 10 minutes (word count target scales automatically with speech rate)
+- **Podcast Length**: 5 or 10 minutes (word count target scales automatically with speech rate)
 - **Speech Rate**: 0–25% speed increase above baseline (default +10%), applied to both TTS synthesis and the word count target
 
 **Output:**
