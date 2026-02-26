@@ -5,7 +5,7 @@ import pandas as pd
 import gitlab_data
 import tabs
 
-_MR_CACHE_TTL = 300  # seconds
+_MR_CACHE_TTL = 1800  # seconds
 
 
 # --- App UI ---

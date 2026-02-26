@@ -15,7 +15,7 @@ def get_gitlab_client():
     )
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=7200)
 def fetch_subgroups() -> tuple[list[dict], str]:
     gl = get_gitlab_client()
     group_id = os.getenv("COMPANY_GROUP_ID")
@@ -30,7 +30,7 @@ def fetch_subgroups() -> tuple[list[dict], str]:
     ], root_path
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=7200)
 def fetch_all_projects():
     gl = get_gitlab_client()
     group_id = os.getenv("COMPANY_GROUP_ID")
