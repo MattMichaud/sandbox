@@ -16,6 +16,21 @@ def get_gitlab_client():
 
 
 @st.cache_data(ttl=3600)
+def fetch_subgroups() -> tuple[list[dict], str]:
+    gl = get_gitlab_client()
+    group_id = os.getenv("COMPANY_GROUP_ID")
+    if not group_id:
+        return [], ""
+    group = gl.groups.get(group_id)
+    root_path = group.full_path
+    subgroups = group.descendant_groups.list(get_all=True)
+    return [
+        {"id": sg.id, "name": sg.name, "full_path": sg.full_path}
+        for sg in subgroups
+    ], root_path
+
+
+@st.cache_data(ttl=3600)
 def fetch_all_projects():
     gl = get_gitlab_client()
     group_id = os.getenv("COMPANY_GROUP_ID")

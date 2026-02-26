@@ -7,10 +7,10 @@ This tool was designed for engineering leaders to quickly synthesize development
 
 ## ✨ Features
 
-* **Smart Repository Selection**: Wildcard/pattern matching to quickly filter through complex GitLab sub-group hierarchies.
+* **Subgroup-Aware Repository Selection**: Two-step picker that mirrors GitLab's group hierarchy. Select one or more teams (any nesting depth) and all repos cascade automatically; optionally filter by name or deselect individual repos. Selecting `(all repos)` includes every repo under the configured group. Falls back to a flat text-filter list when no group is configured.
 * **Automated Noise Reduction**: Built-in filters to exclude bot activity (e.g., Renovate) and focus on human-driven impact.
 * **Parallel Fetching**: MR data is fetched concurrently across repos (8 threads) for faster load times.
-* **Flexible Timeframes**: Choose between rolling windows (last 24 hours / 7 days / 30 days) or calendar-bounded "Full" periods (last full day / week / month) that cap at midnight.
+* **Flexible Timeframes**: Calendar-bounded windows (Last Full Day, Last Full Work Week) that cap at midnight, a rolling 30-day window, or a fully custom date range.
 
 ### Tab 1 — Team Stats
 A behavioral dashboard with six Altair charts:
@@ -70,7 +70,7 @@ Create a `.env` file in this directory:
 ```
 GITLAB_URL=https://gitlab.example.com
 GITLAB_TOKEN=your_personal_access_token
-COMPANY_GROUP_ID=12345        # optional; scopes project list to a GitLab group
+COMPANY_GROUP_ID=12345        # optional; scopes project list and enables subgroup-aware team picker
 GEMINI_API_KEY=your_gemini_api_key
 ```
 
