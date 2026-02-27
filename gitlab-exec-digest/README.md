@@ -28,9 +28,11 @@ LLM-powered summary (via `gemini-3-flash-preview`, temperature 0.2) with schema-
 - Download the full digest as a Markdown file
 
 ### Tab 3 — Auto Snitch Tool
-LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced JSON output. Identifies the most demo-worthy MRs for your weekly eng meeting. For each recommendation:
-- Demo title, author, and description
+LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced JSON output. Selects exactly one MR per author and ranks them by demo-worthiness for your weekly technical demo meeting. Scoring prioritizes work that exposes teammates to new techniques or approaches — the goal is inspiration and exposure, not visual polish. For each recommendation:
+- Demo title, author, and description (framed around what others can learn from it)
+- **Spark Score** (1–10): how likely the MR is to inspire teammates or expose them to a new technique or pattern; cards are sorted highest-to-lowest
 - Song recommendation that loosely matches the content
+- Authors with no demo-worthy MRs (docs-only, config changes, etc.) are still included with a low spark score rather than omitted
 
 ### Tab 4 — Podcast
 Generates a two-host conversational podcast from the fetched MR data using Gemini for script generation and Microsoft Edge TTS (`edge-tts`) for free, high-quality neural speech synthesis.

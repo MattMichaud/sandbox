@@ -120,8 +120,9 @@ def render_snitch_tab(digest_data):
         return
 
     st.markdown("### 🕵️ Auto Snitch Recommendations")
-    for item in snitch_data:
+    for item in sorted(snitch_data, key=lambda x: x.get("spark_score", 0), reverse=True):
         with st.container(border=True):
+            score = item.get("spark_score", 0)
             st.markdown(
                 f"### [{item.get('demo_title', 'Untitled')}]({item.get('link', '#')})"
             )
@@ -130,6 +131,7 @@ def render_snitch_tab(digest_data):
             with col1:
                 st.markdown(f"**👤 Author:** {item.get('author', 'Unknown')}")
                 st.markdown(item.get("description", ""))
+                st.caption(f"⚡ Spark score: {score}/10")
             with col2:
                 st.success(
                     f"**🎵 Song Rec**\n\n{item.get('song_recommendation', 'N/A')}",
@@ -137,9 +139,9 @@ def render_snitch_tab(digest_data):
                 )
 
     md_report = f"# Auto Snitch - {datetime.now().strftime('%Y-%m-%d')}\n\n"
-    for item in snitch_data:
+    for item in sorted(snitch_data, key=lambda x: x.get("spark_score", 0), reverse=True):
         md_report += f"## [{item.get('demo_title', 'Untitled')}]({item.get('link', '#')})\n"
-        md_report += f"**Author:** {item.get('author', 'Unknown')}\n\n"
+        md_report += f"**Author:** {item.get('author', 'Unknown')} | **Spark Score:** {item.get('spark_score', 'N/A')} / 10\n\n"
         md_report += f"{item.get('description', '')}\n\n"
         md_report += f"🎵 *{item.get('song_recommendation', '')}*\n\n"
 

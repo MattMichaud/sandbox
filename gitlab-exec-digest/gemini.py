@@ -53,6 +53,7 @@ _SNITCH_SCHEMA = types.Schema(
             "description": types.Schema(type=types.Type.STRING),
             "song_recommendation": types.Schema(type=types.Type.STRING),
             "link": types.Schema(type=types.Type.STRING),
+            "spark_score": types.Schema(type=types.Type.INTEGER),
         },
     ),
 )
@@ -198,24 +199,39 @@ def auto_snitch_with_gemini(mrs_data):
     mr_context = _build_mr_context(mrs_data)
 
     prompt = f"""
-You are a Team Lead preparing for the weekly engineering demo meeting.
-Review these Merge Requests and identify interesting, unique, or "cool" changes that should be shared with the team.
+You are a Team Lead curating the agenda for a weekly analytics demo meeting. The goal of the demo is technical exposure and inspiration — attendees should walk away with new techniques and approaches in mind that they can apply to their own work.
 
-Look for:
-- New user-facing features
-- Clever code techniques or refactors
-- Performance improvements
-- Anything that would make for a good 5-minute demo
+Review these Merge Requests and select exactly ONE MR per author to highlight.
 
-Constraint: Try to maximize the diversity of authors. Do not select the same author more than once unless they are the only ones with activity.
+Rules:
+- Include every author who submitted at least one MR — do not skip any author.
+- Select the single BEST MR for each author: the one most likely to teach teammates something or spark curiosity about a technique.
+- Assign a "spark score" from 1 to 10 reflecting how likely this MR is to inspire others or expose them to a new technique or approach:
+  - 8-10: Novel technique, clever solution, or approach others could learn from and apply elsewhere
+  - 5-7: Solid technical work that demonstrates good craft or an interesting pattern
+  - 1-4: Routine or mechanical change with little to teach (still include — just score it low)
 
-Output a strict JSON list of objects.
+Good demo candidates (focus on the HOW, not the WHY):
+- Clever or non-obvious technical approaches to a problem
+- New tools, libraries, or patterns introduced to the codebase
+- Refactors that demonstrate better ways to structure code
+- Performance improvements that show interesting engineering tradeoffs
+- Anything a teammate could look at and say "oh, I didn't know you could do it that way"
+
+Poor demo candidates (score low, but still include if it's the author's only MR):
+- Documentation-only changes
+- Dependency bumps with no behavior change
+- Configuration or environment file changes
+- Trivial copy/text fixes or formatting-only changes
+
+Output a strict JSON list of objects, one per author.
 Each object must have the following keys:
 - "author": The author's name
 - "demo_title": A catchy title for the demo
-- "description": A short blurb explaining what is cool/interesting.
+- "description": A short blurb explaining what technique or approach is interesting and what others could learn from it.
 - "song_recommendation": A song (Artist - Title) that loosely ties to the content of the demo.
 - "link": The URL to the MR.
+- "spark_score": An integer from 1 to 10 rating how likely this MR is to inspire or expose teammates to something new.
 
 DATA:
 {mr_context}
