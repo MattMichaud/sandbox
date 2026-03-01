@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "claude-plan-image-generator"
+version = "0.1.0"
+description = "Streamlit app that generates images from Claude plan files using Google Gemini"
+authors = []
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+streamlit = "*"
+google-genai = "*"
+python-dotenv = "*"
+pillow = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
