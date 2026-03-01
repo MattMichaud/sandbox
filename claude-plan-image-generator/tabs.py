@@ -8,6 +8,10 @@ from plans import PLANS_DIR, extract_plan_title, format_plan_option, list_plans,
 
 @st.fragment
 def render_generate_tab():
+    if "_publish_toast" in st.session_state:
+        st.toast("🎨 **Published to Gallery!**", duration=3)
+        del st.session_state["_publish_toast"]
+
     plans = list_plans()
 
     if not plans:
@@ -105,7 +109,7 @@ def render_generate_tab():
                 mode=st.session_state.img_mode,
                 style=st.session_state.get("img_style"),
             )
-            st.toast("Published!")
+            st.session_state["_publish_toast"] = True
             st.rerun(scope="app")
 
 
