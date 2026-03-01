@@ -19,7 +19,7 @@ Pick a plan and configure generation options, then click **Generate**:
   - **Title strength** — `Low / Medium / High` slider controlling how much creative weight the filename carries vs. the content.
   - The selected artistic style, if any, is injected as a hard constraint into the distillation instruction.
 
-After generation the image is shown with its prompt (expandable), a **Download PNG** button, and a **Publish to Gallery** button. Publishing saves the image and its metadata (plan name, prompt, mode, style) to a local `gallery/` directory and switches immediately to the Gallery tab.
+After generation the image is shown with its prompt (expandable), a **Download PNG** button, and a **Publish to Gallery** button. Publishing saves the image and its metadata (plan name, prompt, mode, style) to a local `gallery/` directory, shows a confirmation toast, and refreshes the Gallery tab in the background.
 
 ### Gallery tab
 
