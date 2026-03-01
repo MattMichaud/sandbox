@@ -1,9 +1,21 @@
+import tomllib
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
 
+STYLES_FILE = Path(__file__).parent / "styles.toml"
+
 PLANS_DIR = Path.home() / ".claude" / "plans"
+
+
+@st.cache_data
+def load_styles() -> list[str]:
+    try:
+        with open(STYLES_FILE, "rb") as f:
+            return tomllib.load(f).get("styles", [])
+    except (FileNotFoundError, KeyError):
+        return []
 
 
 @st.cache_data

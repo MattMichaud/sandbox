@@ -13,7 +13,7 @@ TEXT_MODEL = "gemini-3-flash-preview"
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
-def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str) -> str:
+def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str, style: str | None = None) -> str:
     strength_instruction = {
         "Low": (
             f"The plan is named '{plan_name}', but treat that as background context only. "
@@ -29,6 +29,8 @@ def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str)
         ),
     }[title_strength]
 
+    style_instruction = f"The image must be rendered in {style} style. " if style else ""
+
     response = client.models.generate_content(
         model=TEXT_MODEL,
         contents=(
@@ -36,7 +38,7 @@ def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str)
             f"{strength_instruction}\n\n"
             "Write a single, vivid image-generation prompt (max 150 words) that captures the essence "
             "of this plan as a visual metaphor. Focus on mood, theme, and key concepts — not literal "
-            "code or text. Output only the prompt, nothing else.\n\n"
+            f"code or text. {style_instruction}Output only the prompt, nothing else.\n\n"
             f"{markdown}"
         ),
     )

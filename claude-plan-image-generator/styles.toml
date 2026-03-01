@@ -1,0 +1,27 @@
+# Artistic styles for the image generator.
+# Each entry appears as an option in the "Artistic style" selector
+# on the Generate tab (Full markdown mode only).
+# Add, remove, or reorder entries freely — the app reloads this file on restart.
+
+styles = [
+    "Watercolor painting",
+    "Oil painting",
+    "Digital concept art",
+    "Pencil sketch",
+    "Ink illustration",
+    "Pixel art",
+    "Flat design",
+    "Isometric illustration",
+    "Art deco",
+    "Bauhaus",
+    "Cyberpunk",
+    "Synthwave",
+    "Minimalist",
+    "Surrealist",
+    "Abstract expressionism",
+    "Comic book",
+    "Photorealistic",
+    "Low-poly 3D",
+    "Stained glass",
+    "Blueprint / technical drawing",
+]
