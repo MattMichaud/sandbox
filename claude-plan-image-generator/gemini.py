@@ -9,6 +9,7 @@ from google.genai import types
 load_dotenv()
 
 IMAGE_MODEL = "gemini-3-pro-image-preview"
+FALLBACK_IMAGE_MODEL = "gemini-2.5-flash-image"
 TEXT_MODEL = "gemini-3-flash-preview"
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -46,34 +47,45 @@ def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str,
     return response.text.strip()
 
 
-def generate_image(prompt: str, status) -> bytes:
-    """Call the image model with up to 2 retries on 503 errors."""
+def _try_generate_image(model: str, prompt: str) -> bytes:
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"],
+        ),
+    )
+    for part in response.parts:
+        if part.inline_data is not None:
+            return part.inline_data.data
+    raise ValueError("No image part found in response.")
+
+
+def generate_image(prompt: str, status, use_fallback: bool = False) -> bytes:
+    """Call the image model with up to 2 retries on 503 errors, then fall back to stable model."""
+    if use_fallback:
+        status.update(label=f"Generating image ({FALLBACK_IMAGE_MODEL})…")
+        return _try_generate_image(FALLBACK_IMAGE_MODEL, prompt)
+
     delays = [5, 10]
     attempts = len(delays) + 1
 
     for attempt in range(attempts):
         status.update(label=f"Generating image — attempt {attempt + 1}/{attempts}…")
         try:
-            response = client.models.generate_content(
-                model=IMAGE_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"],
-                ),
-            )
-            for part in response.parts:
-                if part.inline_data is not None:
-                    return part.inline_data.data
-            raise ValueError("No image part found in response.")
-
+            return _try_generate_image(IMAGE_MODEL, prompt)
         except genai_errors.ServerError as exc:
-            if exc.code == 503 and attempt < len(delays):
-                delay = delays[attempt]
-                for remaining in range(delay, 0, -1):
-                    status.update(
-                        label=f"Attempt {attempt + 1}/{attempts} failed — "
-                              f"503 Service Unavailable. Retrying in {remaining}s…"
-                    )
-                    time.sleep(1)
+            if exc.code == 503:
+                if attempt < len(delays):
+                    delay = delays[attempt]
+                    for remaining in range(delay, 0, -1):
+                        status.update(
+                            label=f"Attempt {attempt + 1}/{attempts} failed — "
+                                  f"503 Service Unavailable. Retrying in {remaining}s…"
+                        )
+                        time.sleep(1)
+                else:
+                    status.update(label=f"Falling back to stable model ({FALLBACK_IMAGE_MODEL})…")
+                    return _try_generate_image(FALLBACK_IMAGE_MODEL, prompt)
             else:
                 raise

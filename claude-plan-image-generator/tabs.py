@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from gallery import GALLERY_DIR, delete_entry, load_gallery, publish_image
-from gemini import generate_image, markdown_to_image_prompt
+from gemini import FALLBACK_IMAGE_MODEL, generate_image, markdown_to_image_prompt
 from plans import PLANS_DIR, extract_plan_title, format_plan_option, list_plans, load_styles
 
 
@@ -20,15 +20,26 @@ def render_generate_tab():
         )
         return
 
-    selected_plan = st.selectbox("Select a plan", plans, format_func=format_plan_option)
+    plan_col, btn_col = st.columns([9, 1], vertical_alignment="bottom")
+    with plan_col:
+        selected_plan = st.selectbox("Select a plan", plans, format_func=format_plan_option)
+    with btn_col:
+        if st.button("↻", use_container_width=True, help="Refresh plan list"):
+            list_plans.clear()
+            st.rerun(scope="fragment")
     st.caption(selected_plan)
 
     styles = load_styles()
     style = None
     if styles:
         _NO_STYLE = "No style (default)"
-        chosen = st.selectbox("Artistic style", [_NO_STYLE] + styles)
-        style = None if chosen == _NO_STYLE else chosen
+        _CUSTOM = "Custom…"
+        chosen = st.selectbox("Artistic style", [_NO_STYLE] + styles + [_CUSTOM])
+        if chosen == _CUSTOM:
+            custom_input = st.text_input("Style description", placeholder="e.g. 80s anime cel shading")
+            style = custom_input.strip() or None
+        elif chosen != _NO_STYLE:
+            style = chosen
 
     mode = st.radio("Image source", ["Title only", "Full markdown"], horizontal=True)
 
@@ -41,6 +52,10 @@ def render_generate_tab():
             help="How much creative weight to give the plan's filename vs. its content.",
         )
 
+    use_fallback = st.checkbox(
+        "Use stable model",
+        help=f"Skip the preview model and generate directly with {FALLBACK_IMAGE_MODEL}.",
+    )
     generate = st.button("Generate", type="primary")
 
     if generate:
@@ -49,7 +64,7 @@ def render_generate_tab():
             title_prompt = f"{base} in the style of a {style}" if style else base
             with st.status("Generating image…") as status:
                 try:
-                    img_bytes = generate_image(title_prompt, status)
+                    img_bytes = generate_image(title_prompt, status, use_fallback)
                     status.update(label="Done!", state="complete")
                     st.session_state.img_bytes = img_bytes
                     st.session_state.img_caption = selected_plan
@@ -71,7 +86,7 @@ def render_generate_tab():
 
                 with st.status("Step 2/2 — Generating image…") as status:
                     try:
-                        img_bytes = generate_image(image_prompt, status)
+                        img_bytes = generate_image(image_prompt, status, use_fallback)
                         status.update(label="Done!", state="complete")
                         st.session_state.img_bytes = img_bytes
                         st.session_state.img_caption = selected_plan

@@ -8,9 +8,9 @@ Plan files live in `~/.claude/plans/` as markdown files with human-readable slug
 
 ### Generate tab
 
-Pick a plan and configure generation options, then click **Generate**:
+Pick a plan from the dropdown and configure generation options, then click **Generate**. A **↻** button next to the plan selector refreshes the list from disk without restarting the app.
 
-**Artistic style** (optional) — choose a style from a configurable list (e.g. Watercolor painting, Pixel art, Cyberpunk) or leave it as "No style (default)". Applies to both generation modes.
+**Artistic style** (optional) — choose a style from a configurable list (e.g. Watercolor painting, Pixel art, Cyberpunk), select **Custom…** to type your own short style description, or leave it as "No style (default)". Applies to both generation modes.
 
 **Image source** — two modes:
 
@@ -18,6 +18,8 @@ Pick a plan and configure generation options, then click **Generate**:
 - **Full markdown** — the plan content is first sent to Gemini Flash, which distills it into a concise visual metaphor prompt (max 150 words). Two additional controls appear:
   - **Title strength** — `Low / Medium / High` slider controlling how much creative weight the filename carries vs. the content.
   - The selected artistic style, if any, is injected as a hard constraint into the distillation instruction.
+
+**Use stable model** — checking this box skips the preview model entirely and generates directly with `gemini-2.5-flash-image`. Useful when `gemini-3-pro-image-preview` is consistently unavailable.
 
 After generation the image is shown with its prompt (expandable), a **Download PNG** button, and a **Publish to Gallery** button. Publishing saves the image and its metadata (plan name, prompt, mode, style) to a local `gallery/` directory, shows a confirmation toast, and refreshes the Gallery tab in the background.
 
@@ -79,5 +81,6 @@ Then open [http://localhost:8501](http://localhost:8501) in your browser. The ap
 | `styles.toml` | User-editable list of artistic styles |
 
 Models used:
-- **Image generation:** `gemini-3-pro-image-preview`
+- **Image generation (primary):** `gemini-3-pro-image-preview` — retried up to 3 times on 503, then automatically falls back to the stable model
+- **Image generation (fallback/stable):** `gemini-2.5-flash-image`
 - **Prompt distillation (Full markdown):** `gemini-3-flash-preview`
