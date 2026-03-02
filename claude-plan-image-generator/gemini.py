@@ -3,6 +3,7 @@ import time
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 load_dotenv()
@@ -47,10 +48,11 @@ def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str,
 
 def generate_image(prompt: str, status) -> bytes:
     """Call the image model with up to 2 retries on 503 errors."""
-    delays = [2, 4]
+    delays = [5, 10]
     attempts = len(delays) + 1
 
     for attempt in range(attempts):
+        status.update(label=f"Generating image — attempt {attempt + 1}/{attempts}…")
         try:
             response = client.models.generate_content(
                 model=IMAGE_MODEL,
@@ -64,15 +66,14 @@ def generate_image(prompt: str, status) -> bytes:
                     return part.inline_data.data
             raise ValueError("No image part found in response.")
 
-        except Exception as exc:
-            is_503 = "503" in str(exc)
-            if is_503 and attempt < len(delays):
+        except genai_errors.ServerError as exc:
+            if exc.code == 503 and attempt < len(delays):
                 delay = delays[attempt]
-                status.update(
-                    label=f"Service unavailable — retrying in {delay}s "
-                          f"(attempt {attempt + 2}/{attempts})…"
-                )
-                time.sleep(delay)
-                status.update(label=f"Generating image (attempt {attempt + 2}/{attempts})…")
+                for remaining in range(delay, 0, -1):
+                    status.update(
+                        label=f"Attempt {attempt + 1}/{attempts} failed — "
+                              f"503 Service Unavailable. Retrying in {remaining}s…"
+                    )
+                    time.sleep(1)
             else:
                 raise
