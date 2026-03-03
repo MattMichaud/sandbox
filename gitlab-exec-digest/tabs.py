@@ -99,6 +99,44 @@ def render_digest_tab(digest_data, timeframe):
 
 
 @st.fragment
+def render_recap_tab(digest_data):
+    if st.button("Generate Recap", type="primary"):
+        with st.spinner("Generating contributor recap..."):
+            st.session_state["recap_result"] = gemini.contributor_recap_with_gemini(
+                digest_data
+            )
+
+    if "recap_result" not in st.session_state:
+        return
+
+    recap_data = st.session_state["recap_result"]
+
+    if recap_data is None:
+        st.error("Failed to generate recap. Please try again.")
+        return
+
+    if not recap_data:
+        st.info("No MRs found for this timeframe.")
+        return
+
+    st.markdown("### 👥 Contributor Recap")
+
+    by_author = {}
+    for item in recap_data:
+        author = item.get("author", "Unknown")
+        by_author.setdefault(author, []).append(item)
+
+    for author in sorted(by_author.keys(), key=str.casefold):
+        st.markdown(f"**{author}**")
+        bullets = []
+        for item in by_author[author]:
+            url = item.get("url", "#")
+            desc = item.get("description", "")
+            bullets.append(f"- {desc} ([{_mr_label(url)}]({url}))")
+        st.markdown("\n".join(bullets))
+
+
+@st.fragment
 def render_snitch_tab(digest_data):
     if st.button("Auto Snitch", type="primary"):
         with st.spinner("Snitching on teammates..."):

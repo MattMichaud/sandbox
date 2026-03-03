@@ -27,14 +27,19 @@ LLM-powered summary (via `gemini-3-flash-preview`, temperature 0.2) with schema-
 - **Technical Highlights**: Up to 10 engineering-detail callouts (architecture, refactors, library updates)
 - Download the full digest as a Markdown file
 
-### Tab 3 — Auto Snitch Tool
+### Tab 3 — Contributor Recap
+LLM-powered (via `gemini-3-flash-preview`, temperature 0.2) with schema-enforced JSON output. Generates one short technical description for **every** MR in the dataset — no selection or filtering. Results are grouped alphabetically by author, making it easy to scan each contributor's output for a period:
+- One bullet per MR, written in technical terms (the *how*, not the *why*)
+- Each bullet links directly to the MR using a compact `!NNN` label
+
+### Tab 4 — Auto Snitch Tool
 LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced JSON output. Selects exactly one MR per author and ranks them by demo-worthiness for your weekly technical demo meeting. Scoring prioritizes work that exposes teammates to new techniques or approaches — the goal is inspiration and exposure, not visual polish. For each recommendation:
 - Demo title, author, and description (framed around what others can learn from it)
 - **Spark Score** (1–10): how likely the MR is to inspire teammates or expose them to a new technique or pattern; cards are sorted highest-to-lowest
 - Song recommendation that loosely matches the content
 - Authors with no demo-worthy MRs (docs-only, config changes, etc.) are still included with a low spark score rather than omitted
 
-### Tab 4 — Podcast
+### Tab 5 — Podcast
 Generates a two-host conversational podcast from the fetched MR data using Gemini for script generation and Microsoft Edge TTS (`edge-tts`) for free, high-quality neural speech synthesis.
 
 **Controls:**
@@ -47,7 +52,7 @@ Generates a two-host conversational podcast from the fetched MR data using Gemin
 - MP3 download
 - Expandable transcript showing the full Alex / Matt dialogue
 
-LLM results in Tabs 2, 3, and 4 are persisted in session state and cleared automatically when new MR data is fetched.
+LLM results in Tabs 2, 3, 4, and 5 are persisted in session state and cleared automatically when new MR data is fetched.
 
 ## 🗂️ Project Structure
 
@@ -57,7 +62,7 @@ gitlab-exec-digest/
 ├── gitlab_data.py    # GitLab data layer — client, project/MR fetching, date utils
 ├── gemini.py         # Gemini LLM layer — schemas, prompt building, all LLM calls
 ├── podcast.py        # Audio layer — edge-tts synthesis and MP3 assembly
-└── tabs.py           # Tab renderers — Team Stats, Executive Digest, Auto Snitch, Podcast
+└── tabs.py           # Tab renderers — Team Stats, Executive Digest, Contributor Recap, Auto Snitch, Podcast
 ```
 
 ## 🛠️ Setup

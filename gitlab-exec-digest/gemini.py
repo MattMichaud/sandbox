@@ -58,6 +58,19 @@ _SNITCH_SCHEMA = types.Schema(
     ),
 )
 
+_RECAP_SCHEMA = types.Schema(
+    type=types.Type.ARRAY,
+    items=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "author": types.Schema(type=types.Type.STRING),
+            "url": types.Schema(type=types.Type.STRING),
+            "description": types.Schema(type=types.Type.STRING),
+        },
+        required=["author", "url", "description"],
+    ),
+)
+
 _PODCAST_SCHEMA = types.Schema(
     type=types.Type.OBJECT,
     properties={
@@ -251,6 +264,49 @@ DATA:
         return json.loads(response.text)
     except Exception as e:
         print(f"Auto Snitch failed: {e}")
+        print(f"Raw response text: {response.text if response else 'no response'}")
+        return None
+
+
+def contributor_recap_with_gemini(mrs_data):
+    if not mrs_data:
+        return []
+
+    mr_context = _build_mr_context(mrs_data)
+
+    prompt = f"""
+You are a Technical Chief of Staff writing a contributor recap for an engineering team.
+
+For EVERY merge request in the data below, produce exactly one entry describing the technical work done.
+
+Rules:
+- Include ALL merge requests — do not skip any.
+- Use the exact author name and URL from the data — do not modify them.
+- Write a single short sentence (~15 words max) focusing on HOW the change was implemented — the technical approach, pattern, or method used.
+- Do NOT explain why the change was made or its business value. Focus on engineering technique.
+- Keep descriptions concrete and specific (e.g. "Replaced linear scan with binary search for faster lookup" not "Improved performance").
+
+Output a strict JSON list, one object per MR with keys: "author", "url", "description".
+
+DATA:
+{mr_context}
+"""
+
+    response = None
+    try:
+        response = _generate(
+            prompt,
+            types.GenerateContentConfig(
+                temperature=0.2,
+                top_p=0.95,
+                top_k=40,
+                response_mime_type="application/json",
+                response_schema=_RECAP_SCHEMA,
+            ),
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Contributor recap failed: {e}")
         print(f"Raw response text: {response.text if response else 'no response'}")
         return None
 
