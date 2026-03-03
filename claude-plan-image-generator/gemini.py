@@ -15,6 +15,34 @@ FALLBACK_TEXT_MODEL = "gemini-2.5-flash"
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+RETRY_DELAYS = [5, 10]
+
+
+def _call_with_retry(primary_call, fallback_call, action_label: str, fallback_model: str, status, step_prefix: str = ""):
+    """Attempt primary_call() up to len(RETRY_DELAYS)+1 times on 503 errors,
+    sleeping between attempts; fall back to fallback_call() once retries
+    are exhausted."""
+    attempts = len(RETRY_DELAYS) + 1
+    for attempt in range(attempts):
+        status.update(label=f"{step_prefix}{action_label} — attempt {attempt + 1}/{attempts}…")
+        try:
+            return primary_call()
+        except genai_errors.ServerError as exc:
+            if exc.code == 503:
+                if attempt < len(RETRY_DELAYS):
+                    delay = RETRY_DELAYS[attempt]
+                    for remaining in range(delay, 0, -1):
+                        status.update(
+                            label=f"{step_prefix}Attempt {attempt + 1}/{attempts} failed — "
+                                  f"503 Service Unavailable. Retrying in {remaining}s…"
+                        )
+                        time.sleep(1)
+                else:
+                    status.update(label=f"{step_prefix}Falling back to stable model ({fallback_model})…")
+                    return fallback_call()
+            else:
+                raise
+
 
 def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str, style: str | None, status) -> str:
     strength_instruction = {
@@ -43,30 +71,14 @@ def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str,
         f"{markdown}"
     )
 
-    delays = [5, 10]
-    attempts = len(delays) + 1
-
-    for attempt in range(attempts):
-        status.update(label=f"Step 1/2 — Generating image prompt — attempt {attempt + 1}/{attempts}…")
-        try:
-            response = client.models.generate_content(model=TEXT_MODEL, contents=contents)
-            return response.text.strip()
-        except genai_errors.ServerError as exc:
-            if exc.code == 503:
-                if attempt < len(delays):
-                    delay = delays[attempt]
-                    for remaining in range(delay, 0, -1):
-                        status.update(
-                            label=f"Step 1/2 — Attempt {attempt + 1}/{attempts} failed — "
-                                  f"503 Service Unavailable. Retrying in {remaining}s…"
-                        )
-                        time.sleep(1)
-                else:
-                    status.update(label=f"Step 1/2 — Falling back to stable model ({FALLBACK_TEXT_MODEL})…")
-                    response = client.models.generate_content(model=FALLBACK_TEXT_MODEL, contents=contents)
-                    return response.text.strip()
-            else:
-                raise
+    return _call_with_retry(
+        primary_call=lambda: client.models.generate_content(model=TEXT_MODEL, contents=contents).text.strip(),
+        fallback_call=lambda: client.models.generate_content(model=FALLBACK_TEXT_MODEL, contents=contents).text.strip(),
+        action_label="Generating image prompt",
+        fallback_model=FALLBACK_TEXT_MODEL,
+        status=status,
+        step_prefix="Step 1/2 — ",
+    )
 
 
 def _try_generate_image(model: str, prompt: str) -> bytes:
@@ -89,25 +101,10 @@ def generate_image(prompt: str, status, use_fallback: bool = False) -> bytes:
         status.update(label=f"Generating image ({FALLBACK_IMAGE_MODEL})…")
         return _try_generate_image(FALLBACK_IMAGE_MODEL, prompt)
 
-    delays = [5, 10]
-    attempts = len(delays) + 1
-
-    for attempt in range(attempts):
-        status.update(label=f"Generating image — attempt {attempt + 1}/{attempts}…")
-        try:
-            return _try_generate_image(IMAGE_MODEL, prompt)
-        except genai_errors.ServerError as exc:
-            if exc.code == 503:
-                if attempt < len(delays):
-                    delay = delays[attempt]
-                    for remaining in range(delay, 0, -1):
-                        status.update(
-                            label=f"Attempt {attempt + 1}/{attempts} failed — "
-                                  f"503 Service Unavailable. Retrying in {remaining}s…"
-                        )
-                        time.sleep(1)
-                else:
-                    status.update(label=f"Falling back to stable model ({FALLBACK_IMAGE_MODEL})…")
-                    return _try_generate_image(FALLBACK_IMAGE_MODEL, prompt)
-            else:
-                raise
+    return _call_with_retry(
+        primary_call=lambda: _try_generate_image(IMAGE_MODEL, prompt),
+        fallback_call=lambda: _try_generate_image(FALLBACK_IMAGE_MODEL, prompt),
+        action_label="Generating image",
+        fallback_model=FALLBACK_IMAGE_MODEL,
+        status=status,
+    )
