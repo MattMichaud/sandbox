@@ -21,6 +21,8 @@ Pick a plan from the dropdown and configure generation options, then click **Gen
 
 **Use stable model** — checking this box skips the preview model entirely and generates directly with `gemini-2.5-flash-image`. Useful when `gemini-3-pro-image-preview` is consistently unavailable.
 
+When a step completes using the fallback model (whether via automatic retry exhaustion or the checkbox), the status bar will read **Done! (used stable model)** so it's always clear which model produced the result.
+
 After generation the image is shown with its prompt (expandable), a **Download PNG** button, and a **Publish to Gallery** button. Publishing saves the image and its metadata (plan name, prompt, mode, style) to a local `gallery/` directory, shows a confirmation toast, and refreshes the Gallery tab in the background.
 
 ### Gallery tab
@@ -85,3 +87,5 @@ Models used:
 - **Image generation (fallback/stable):** `gemini-2.5-flash-image`
 - **Prompt distillation (Full markdown, primary):** `gemini-3-flash-preview` — retried up to 3 times on 503, then automatically falls back to the stable text model
 - **Prompt distillation (Full markdown, fallback/stable):** `gemini-2.5-flash`
+
+Every `ServerError` from the Gemini API is logged to the terminal at `WARNING` level with its HTTP status code, gRPC status string, and full message — useful for diagnosing whether errors are genuine 503s, rate-limit 429s, or something else.

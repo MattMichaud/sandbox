@@ -5,6 +5,9 @@ from gallery import GALLERY_DIR, delete_entry, load_gallery, publish_image
 from gemini import FALLBACK_IMAGE_MODEL, generate_image, markdown_to_image_prompt
 from plans import PLANS_DIR, extract_plan_title, format_plan_option, list_plans, load_styles
 
+_NO_STYLE = "No style (default)"
+_CUSTOM = "Custom…"
+
 
 @st.fragment
 def render_generate_tab():
@@ -32,8 +35,6 @@ def render_generate_tab():
     styles = load_styles()
     style = None
     if styles:
-        _NO_STYLE = "No style (default)"
-        _CUSTOM = "Custom…"
         chosen = st.selectbox("Artistic style", [_NO_STYLE] + styles + [_CUSTOM])
         if chosen == _CUSTOM:
             custom_input = st.text_input("Style description", placeholder="e.g. 80s anime cel shading")
@@ -62,10 +63,11 @@ def render_generate_tab():
         if mode == "Title only":
             base = selected_plan.removesuffix(".md").replace("-", " ")
             title_prompt = f"{base} in the style of a {style}" if style else base
-            with st.status("Generating image…") as status:
+            with st.status("Generating image…", expanded=False) as status:
                 try:
-                    img_bytes = generate_image(title_prompt, status, use_fallback)
-                    status.update(label="Done!", state="complete")
+                    img_bytes, used_fallback = generate_image(title_prompt, status, use_fallback)
+                    done_label = "Done!" + (" (used stable model)" if used_fallback else "")
+                    status.update(label=done_label, state="complete")
                     st.session_state.img_bytes = img_bytes
                     st.session_state.img_caption = selected_plan
                     st.session_state.img_filename = f"{selected_plan}.png"
@@ -79,21 +81,24 @@ def render_generate_tab():
         else:
             markdown = (PLANS_DIR / selected_plan).read_text()
             image_prompt = None
-            with st.status("Step 1/2 — Distilling plan into image prompt…") as prompt_status:
+            used_fallback_1 = False
+            with st.status("Step 1/2 — Distilling plan into image prompt…", expanded=False) as prompt_status:
                 try:
-                    image_prompt = markdown_to_image_prompt(
+                    image_prompt, used_fallback_1 = markdown_to_image_prompt(
                         selected_plan, markdown, title_strength, style, prompt_status
                     )
-                    prompt_status.update(label="Step 1/2 — Done!", state="complete")
+                    done_label = "Step 1/2 — Done!" + (" (used stable model)" if used_fallback_1 else "")
+                    prompt_status.update(label=done_label, state="complete")
                 except Exception as exc:
                     prompt_status.update(label="Step 1/2 — Failed", state="error")
                     st.error(f"Prompt generation failed: {exc}")
 
             if image_prompt is not None:
-                with st.status("Step 2/2 — Generating image…") as status:
+                with st.status("Step 2/2 — Generating image…", expanded=False) as status:
                     try:
-                        img_bytes = generate_image(image_prompt, status, use_fallback)
-                        status.update(label="Done!", state="complete")
+                        img_bytes, used_fallback_2 = generate_image(image_prompt, status, use_fallback, step_prefix="Step 2/2 — ")
+                        done_label = "Step 2/2 — Done!" + (" (used stable model)" if used_fallback_2 else "")
+                        status.update(label=done_label, state="complete")
                         st.session_state.img_bytes = img_bytes
                         st.session_state.img_caption = selected_plan
                         st.session_state.img_filename = f"{selected_plan}.png"
@@ -138,10 +143,9 @@ def render_gallery_tab():
     components.html("""
 <script>
 (function() {
+    var doc = window.parent.document;
     function attachListeners() {
-        var doc = window.parent.document;
-        var imgs = doc.querySelectorAll('[data-testid="stImage"] img');
-        imgs.forEach(function(img) {
+        doc.querySelectorAll('[data-testid="stImage"] img').forEach(function(img) {
             if (img.dataset.lightbox) return;
             img.dataset.lightbox = '1';
             img.style.cursor = 'zoom-in';
@@ -162,8 +166,7 @@ def render_gallery_tab():
         });
     }
     attachListeners();
-    setTimeout(attachListeners, 500);
-    setTimeout(attachListeners, 1500);
+    new MutationObserver(attachListeners).observe(doc.body, { childList: true, subtree: true });
 })();
 </script>
 """, height=0)

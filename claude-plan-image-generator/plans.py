@@ -1,8 +1,11 @@
+import logging
 import tomllib
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
+
+log = logging.getLogger(__name__)
 
 STYLES_FILE = Path(__file__).parent / "styles.toml"
 
@@ -35,7 +38,9 @@ def extract_plan_title(plan_name: str) -> str:
                 return line[2:].strip()
     except Exception:
         pass
-    return plan_name.replace("-", " ").title()
+    fallback = plan_name.replace("-", " ").title()
+    log.debug("No # heading found in %s — using slug fallback: %r", plan_name, fallback)
+    return fallback
 
 
 def format_plan_option(plan_name: str) -> str:

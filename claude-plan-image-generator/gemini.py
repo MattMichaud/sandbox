@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 
@@ -7,6 +8,8 @@ from google.genai import errors as genai_errors
 from google.genai import types
 
 load_dotenv()
+
+log = logging.getLogger(__name__)
 
 IMAGE_MODEL = "gemini-3-pro-image-preview"
 FALLBACK_IMAGE_MODEL = "gemini-2.5-flash-image"
@@ -18,16 +21,21 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 RETRY_DELAYS = [5, 10]
 
 
-def _call_with_retry(primary_call, fallback_call, action_label: str, fallback_model: str, status, step_prefix: str = ""):
+def _call_with_retry(primary_call, fallback_call, action_label: str, fallback_model: str, status, step_prefix: str = "") -> tuple:
     """Attempt primary_call() up to len(RETRY_DELAYS)+1 times on 503 errors,
     sleeping between attempts; fall back to fallback_call() once retries
-    are exhausted."""
+    are exhausted. Returns (result, used_fallback: bool)."""
     attempts = len(RETRY_DELAYS) + 1
     for attempt in range(attempts):
         status.update(label=f"{step_prefix}{action_label} — attempt {attempt + 1}/{attempts}…")
         try:
-            return primary_call()
+            return primary_call(), False
         except genai_errors.ServerError as exc:
+            log.warning(
+                "%sServerError on attempt %d/%d — code=%r status=%r message=%r",
+                step_prefix, attempt + 1, attempts,
+                exc.code, getattr(exc, "status", None), str(exc),
+            )
             if exc.code == 503:
                 if attempt < len(RETRY_DELAYS):
                     delay = RETRY_DELAYS[attempt]
@@ -38,8 +46,9 @@ def _call_with_retry(primary_call, fallback_call, action_label: str, fallback_mo
                         )
                         time.sleep(1)
                 else:
+                    log.warning("%sAll retries exhausted — falling back to %s", step_prefix, fallback_model)
                     status.update(label=f"{step_prefix}Falling back to stable model ({fallback_model})…")
-                    return fallback_call()
+                    return fallback_call(), True
             else:
                 raise
 
@@ -71,7 +80,7 @@ def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str,
         f"{markdown}"
     )
 
-    return _call_with_retry(
+    prompt, used_fallback = _call_with_retry(
         primary_call=lambda: client.models.generate_content(model=TEXT_MODEL, contents=contents).text.strip(),
         fallback_call=lambda: client.models.generate_content(model=FALLBACK_TEXT_MODEL, contents=contents).text.strip(),
         action_label="Generating image prompt",
@@ -79,6 +88,7 @@ def markdown_to_image_prompt(plan_name: str, markdown: str, title_strength: str,
         status=status,
         step_prefix="Step 1/2 — ",
     )
+    return prompt, used_fallback
 
 
 def _try_generate_image(model: str, prompt: str) -> bytes:
@@ -95,11 +105,12 @@ def _try_generate_image(model: str, prompt: str) -> bytes:
     raise ValueError("No image part found in response.")
 
 
-def generate_image(prompt: str, status, use_fallback: bool = False) -> bytes:
-    """Call the image model with up to 2 retries on 503 errors, then fall back to stable model."""
+def generate_image(prompt: str, status, use_fallback: bool = False, step_prefix: str = "") -> tuple[bytes, bool]:
+    """Call the image model with up to 2 retries on 503 errors, then fall back to stable model.
+    Returns (image_bytes, used_fallback: bool)."""
     if use_fallback:
-        status.update(label=f"Generating image ({FALLBACK_IMAGE_MODEL})…")
-        return _try_generate_image(FALLBACK_IMAGE_MODEL, prompt)
+        status.update(label=f"{step_prefix}Generating image ({FALLBACK_IMAGE_MODEL})…")
+        return _try_generate_image(FALLBACK_IMAGE_MODEL, prompt), True
 
     return _call_with_retry(
         primary_call=lambda: _try_generate_image(IMAGE_MODEL, prompt),
@@ -107,4 +118,5 @@ def generate_image(prompt: str, status, use_fallback: bool = False) -> bytes:
         action_label="Generating image",
         fallback_model=FALLBACK_IMAGE_MODEL,
         status=status,
+        step_prefix=step_prefix,
     )

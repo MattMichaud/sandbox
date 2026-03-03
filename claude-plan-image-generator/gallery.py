@@ -1,8 +1,11 @@
 import json
+import logging
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 GALLERY_DIR = Path(__file__).parent / "gallery"
 METADATA_FILE = GALLERY_DIR / "metadata.json"
@@ -28,6 +31,8 @@ def publish_image(
     mode: str,
     style: str | None = None,
 ) -> GalleryEntry:
+    # NOTE: read-append-write is intentionally non-atomic; this app is single-user
+    # and concurrent publishes are not expected. Add file locking if that changes.
     GALLERY_DIR.mkdir(exist_ok=True)
     entry_id = uuid.uuid4().hex[:8]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -48,6 +53,7 @@ def publish_image(
     metadata = _load_metadata()
     metadata.append(asdict(entry))
     METADATA_FILE.write_text(json.dumps(metadata, indent=2))
+    log.info("Published %s (id=%s, mode=%s)", plan_name, entry_id, mode)
     return entry
 
 
@@ -59,6 +65,9 @@ def delete_entry(entry_id: str) -> None:
             image_path = GALLERY_DIR / item["image_file"]
             if image_path.exists():
                 image_path.unlink()
+                log.info("Deleted image file %s (id=%s)", item["image_file"], entry_id)
+            else:
+                log.warning("Image file missing for entry %s: %s", entry_id, item["image_file"])
         else:
             new_metadata.append(item)
     METADATA_FILE.write_text(json.dumps(new_metadata, indent=2))
