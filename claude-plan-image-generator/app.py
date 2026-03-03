@@ -4,7 +4,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.WARNING, format="%(name)s %(levelname)s: %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
 import tabs
 
