@@ -83,4 +83,5 @@ Then open [http://localhost:8501](http://localhost:8501) in your browser. The ap
 Models used:
 - **Image generation (primary):** `gemini-3-pro-image-preview` — retried up to 3 times on 503, then automatically falls back to the stable model
 - **Image generation (fallback/stable):** `gemini-2.5-flash-image`
-- **Prompt distillation (Full markdown):** `gemini-3-flash-preview`
+- **Prompt distillation (Full markdown, primary):** `gemini-3-flash-preview` — retried up to 3 times on 503, then automatically falls back to the stable text model
+- **Prompt distillation (Full markdown, fallback/stable):** `gemini-2.5-flash`

@@ -78,12 +78,18 @@ def render_generate_tab():
                     st.error(f"Image generation failed: {exc}")
         else:
             markdown = (PLANS_DIR / selected_plan).read_text()
-            try:
-                with st.spinner("Step 1/2 — Distilling plan into image prompt…"):
+            image_prompt = None
+            with st.status("Step 1/2 — Distilling plan into image prompt…") as prompt_status:
+                try:
                     image_prompt = markdown_to_image_prompt(
-                        selected_plan, markdown, title_strength, style
+                        selected_plan, markdown, title_strength, style, prompt_status
                     )
+                    prompt_status.update(label="Step 1/2 — Done!", state="complete")
+                except Exception as exc:
+                    prompt_status.update(label="Step 1/2 — Failed", state="error")
+                    st.error(f"Prompt generation failed: {exc}")
 
+            if image_prompt is not None:
                 with st.status("Step 2/2 — Generating image…") as status:
                     try:
                         img_bytes = generate_image(image_prompt, status, use_fallback)
@@ -98,8 +104,6 @@ def render_generate_tab():
                     except Exception as exc:
                         status.update(label="Failed", state="error")
                         st.error(f"Image generation failed: {exc}")
-            except Exception as exc:
-                st.error(f"Failed: {exc}")
 
     if "img_bytes" in st.session_state:
         if st.session_state.img_prompt:
