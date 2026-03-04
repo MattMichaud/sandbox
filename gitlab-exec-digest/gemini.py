@@ -348,6 +348,7 @@ Guidelines:
 - Make it feel like a real podcast: banter, follow-up questions, brief tangents are welcome
 - Each segment is one speaker saying one continuous thought (a few sentences)
 - Alternate between Alex and Matt naturally
+- Do NOT reference a specific time period (e.g. "this week", "this month") — the data may cover any range; refer to it simply as "recent work" or "the work we're covering today"
 - Start with Alex welcoming listeners and introducing the episode topic
 - End with Matt wrapping up
 
