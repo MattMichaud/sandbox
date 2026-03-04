@@ -97,6 +97,15 @@ def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
         mrs = project.mergerequests.list(**kwargs)
 
         for mr in mrs:
+            # Skip MRs merged outside the requested window (updated_at can be
+            # wider than merged_at when comments are added after merging).
+            if mr.merged_at is None:
+                continue
+            if mr.merged_at < updated_after:
+                continue
+            if updated_before and mr.merged_at >= updated_before:
+                continue
+
             author_username = mr.author.get("username", "").lower()
             author_name = mr.author.get("name", "").lower()
             if "renovate" in author_username or "renovate" in author_name:
