@@ -282,9 +282,9 @@ For EVERY merge request in the data below, produce exactly one entry describing 
 Rules:
 - Include ALL merge requests — do not skip any.
 - Use the exact author name and URL from the data — do not modify them.
-- Write a single short sentence (~15 words max) focusing on HOW the change was implemented — the technical approach, pattern, or method used.
-- Do NOT explain why the change was made or its business value. Focus on engineering technique.
-- Keep descriptions concrete and specific (e.g. "Replaced linear scan with binary search for faster lookup" not "Improved performance").
+- Write 1–2 short sentences (~30 words max total) focusing on HOW the change was implemented — the technical approach, pattern, or method used. Weave in which product, app, or repo the change belongs to naturally within the description.
+- Do NOT explain why the change was made or its business value. Focus on engineering technique and context.
+- Keep descriptions concrete and specific (e.g. "Replaced the auth service's linear token scan with a binary search" not "Improved performance").
 
 Output a strict JSON list, one object per MR with keys: "author", "url", "description".
 
