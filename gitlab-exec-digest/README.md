@@ -7,9 +7,11 @@ This tool was designed for engineering leaders to quickly synthesize development
 
 ## ✨ Features
 
+* **Disk-backed Project Cache**: Projects and subgroups are persisted to `projects_cache.json` on first load so the app starts instantly. The sidebar shows how long ago the list was loaded and provides a **Reload projects from GitLab** button to refresh on demand.
 * **Subgroup-Aware Repository Selection**: Two-step picker that mirrors GitLab's group hierarchy. Select one or more teams (any nesting depth) and all repos cascade automatically; optionally filter by name or deselect individual repos. Selecting `(all repos)` includes every repo under the configured group. Falls back to a flat text-filter list when no group is configured.
 * **Automated Noise Reduction**: Built-in filters to exclude bot activity (e.g., Renovate) and focus on human-driven impact.
 * **Parallel Fetching**: MR data is fetched concurrently across repos (8 threads) for faster load times.
+* **Persistent MR Data**: Fetched MR data is held in session state for the lifetime of the browser session and never automatically re-fetched — click **Fetch Merge Requests** again to refresh.
 * **Flexible Timeframes**: Calendar-bounded windows (Last Full Day, Last Full Work Week) that cap at midnight, a rolling 30-day window, or a fully custom date range.
 
 ### Tab 1 — Team Stats
@@ -38,7 +40,7 @@ LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced
 - **Spark Score** (1–10): how likely the MR is to inspire teammates or expose them to a new technique or pattern; cards are sorted highest-to-lowest
 - Song recommendation that loosely matches the content
 - Authors with no demo-worthy MRs (docs-only, config changes, etc.) are still included with a low spark score rather than omitted
-- **Generate Song** button on each card to queue the MR for music generation in the Song Studio tab
+- **Generate Song** button on each card queues the MR in session state and shows a toast; switch to Song Studio and click **Load queued MR** to populate the selector
 
 When there are many authors, requests are automatically batched (up to 10 authors per request) to avoid response size limits. The UI shows per-batch progress and live countdown messaging on retries.
 
@@ -59,7 +61,8 @@ Generates a two-host conversational podcast from the fetched MR data using Gemin
 Generates a short music clip inspired by a selected MR using Google's **Lyria RealTime** API (`lyria-realtime-exp`). Can be reached by clicking **Generate Song** on any Auto Snitch card, or by selecting an MR directly from the dropdown.
 
 **Controls:**
-- **MR selector**: pre-populated when arriving from the Auto Snitch tab; otherwise pick any fetched MR
+- **Load queued MR** button: always visible; loads the MR queued from Auto Snitch (does nothing if none is queued)
+- **MR selector**: pick any fetched MR directly, or use the button above to load the queued one
 - **Genre**: Electronic, Jazz, Rock, Ambient, Hip-Hop, Classical, Funk
 - **Mood**: Energetic, Chill, Tense, Triumphant, Mysterious, Playful
 - **Tempo**: Slow, Medium, Fast

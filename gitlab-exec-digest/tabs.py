@@ -194,7 +194,7 @@ def render_snitch_tab(digest_data):
                     st.session_state["song_studio_mr"] = mr
                     st.session_state.pop("song_audio_bytes", None)
                     st.session_state.pop("song_lyria_prompt", None)
-                    st.toast("MR queued — open the Song Studio tab")
+                    st.toast("MR queued! Go to Song Studio and click 'Load queued MR'.")
 
     md_report = f"# Auto Snitch - {datetime.now().strftime('%Y-%m-%d')}\n\n"
     for item in sorted(snitch_data, key=lambda x: x.get("spark_score", 0), reverse=True):
@@ -484,30 +484,36 @@ def render_song_studio_tab(digest_data):
     mr_options = digest_data
     labels = [f"{mr['author']} — {mr['title']} ({mr['repo']})" for mr in mr_options]
 
-    preselected = st.session_state.get("song_studio_mr")
-    default_index = 0
-    if preselected:
-        try:
-            default_index = next(
-                i for i, mr in enumerate(mr_options) if mr["url"] == preselected["url"]
+    # Apply any pending load from the snitch tab before the selectbox renders
+    if "song_studio_load_index" in st.session_state:
+        st.session_state["song_studio_selectbox"] = st.session_state.pop("song_studio_load_index")
+
+    queued_mr = st.session_state.get("song_studio_mr")
+    btn_help = f"Load: {queued_mr.get('title', '')}" if queued_mr else "No MR queued from Auto Snitch"
+    if st.button("🎵 Load queued MR", help=btn_help):
+        if queued_mr:
+            target_index = next(
+                (i for i, mr in enumerate(mr_options) if mr["url"] == queued_mr["url"]), 0
             )
-        except StopIteration:
-            default_index = 0
+            st.session_state["song_studio_load_index"] = target_index
+            st.session_state.pop("song_audio_bytes", None)
+            st.session_state.pop("song_lyria_prompt", None)
+            st.rerun()
 
     selected_index = st.selectbox(
         "Select a Merge Request",
         options=range(len(mr_options)),
         format_func=lambda i: labels[i],
-        index=default_index,
+        key="song_studio_selectbox",
     )
     selected_mr = mr_options[selected_index]
 
-    # Clear audio if the user picked a different MR than what's cached
-    cached_mr = st.session_state.get("song_studio_mr")
-    if cached_mr is None or cached_mr.get("url") != selected_mr["url"]:
-        st.session_state["song_studio_mr"] = selected_mr
+    # Clear audio if the user manually changed the selectbox
+    last_selected_url = st.session_state.get("song_studio_last_url")
+    if last_selected_url and last_selected_url != selected_mr["url"]:
         st.session_state.pop("song_audio_bytes", None)
         st.session_state.pop("song_lyria_prompt", None)
+    st.session_state["song_studio_last_url"] = selected_mr["url"]
 
     col1, col2, col3 = st.columns(3)
     with col1:

@@ -1,11 +1,8 @@
 import streamlit as st
 from datetime import datetime, timedelta
-import time
 import pandas as pd
 import gitlab_data
 import tabs
-
-_MR_CACHE_TTL = 1800  # seconds
 
 
 # --- App UI ---
@@ -13,19 +10,45 @@ st.set_page_config(page_title="GitLab Digest", page_icon="📝", layout="wide")
 st.title("🚀 Merge Request Explorer")
 
 
-try:
-    gl = gitlab_data.get_gitlab_client()
-    project_map = gitlab_data.fetch_all_projects()
-    project_names = sorted(project_map.keys())
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.info("Check your .env file credentials and Group ID.")
-    st.stop()
+if "projects_data" not in st.session_state:
+    cached = gitlab_data.load_projects_cache()
+    if cached is not None:
+        st.session_state["projects_data"] = cached
+    else:
+        try:
+            with st.spinner("Loading projects and subgroups from GitLab..."):
+                st.session_state["projects_data"] = gitlab_data.fetch_projects_from_api()
+        except Exception as e:
+            st.error(f"Error: {e}")
+            st.info("Check your .env file credentials and Group ID.")
+            st.stop()
+
+projects_data = st.session_state["projects_data"]
+project_map = projects_data["project_map"]
+subgroups = projects_data["subgroups"]
+root_path = projects_data["root_path"]
+project_names = sorted(project_map.keys())
 
 with st.sidebar:
-    st.header("1. Data Scope")
+    cached_at = projects_data.get("cached_at")
+    if cached_at:
+        age = datetime.now() - datetime.fromisoformat(cached_at)
+        hours, remainder = divmod(int(age.total_seconds()), 3600)
+        minutes = remainder // 60
+        if hours > 0:
+            age_str = f"{hours}h {minutes}m ago"
+        else:
+            age_str = f"{minutes}m ago"
+        st.caption(f"Projects loaded {age_str}")
+    if st.button("Reload projects from GitLab"):
+        try:
+            with st.spinner("Reloading projects and subgroups from GitLab..."):
+                st.session_state["projects_data"] = gitlab_data.fetch_projects_from_api()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error reloading projects: {e}")
 
-    subgroups, root_path = gitlab_data.fetch_subgroups()
+    st.header("1. Data Scope")
 
     if subgroups:
         prefix = root_path + "/"
@@ -130,13 +153,8 @@ if st.session_state.get("fetch_active"):
     if not active_projects:
         st.warning("Please select at least one repository.")
     else:
-        cache_key = (tuple(sorted(active_projects)), active_start, active_end)
         cached = st.session_state.get("mr_cache")
-        if (
-            cached is not None
-            and cached["key"] == cache_key
-            and time.time() - cached["time"] < _MR_CACHE_TTL
-        ):
+        if cached is not None:
             digest_data = cached["data"]
         else:
             progress_bar = st.progress(0, text="Fetching merge requests...")
@@ -147,13 +165,10 @@ if st.session_state.get("fetch_active"):
             digest_data = gitlab_data.fetch_merge_requests(
                 active_projects, active_start, active_end,
                 progress_callback=_on_progress,
+                project_map=project_map,
             )
             progress_bar.empty()
-            st.session_state["mr_cache"] = {
-                "key": cache_key,
-                "time": time.time(),
-                "data": digest_data,
-            }
+            st.session_state["mr_cache"] = {"data": digest_data}
 
         if not digest_data:
             st.info("No activity found for these repos in the selected timeframe.")

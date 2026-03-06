@@ -1,11 +1,60 @@
 import streamlit as st
 import gitlab
 import os
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from dotenv import load_dotenv
 import concurrent.futures
 
 load_dotenv(override=True)
+
+PROJECTS_CACHE_FILE = Path(__file__).parent / "projects_cache.json"
+
+
+def load_projects_cache() -> dict | None:
+    try:
+        with open(PROJECTS_CACHE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def save_projects_cache(project_map, subgroups, root_path):
+    data = {
+        "project_map": project_map,
+        "subgroups": subgroups,
+        "root_path": root_path,
+        "cached_at": datetime.now().isoformat(),
+    }
+    with open(PROJECTS_CACHE_FILE, "w") as f:
+        json.dump(data, f)
+
+
+def fetch_projects_from_api() -> dict:
+    gl = get_gitlab_client()
+    group_id = os.getenv("COMPANY_GROUP_ID")
+
+    if group_id:
+        group = gl.groups.get(group_id)
+        root_path = group.full_path
+        projects = group.projects.list(
+            get_all=True, simple=True, include_subgroups=True, all_levels=True
+        )
+        project_map = {p.path_with_namespace: p.id for p in projects}
+        subgroups_raw = group.descendant_groups.list(get_all=True)
+        subgroups = [
+            {"id": sg.id, "name": sg.name, "full_path": sg.full_path}
+            for sg in subgroups_raw
+        ]
+    else:
+        projects = gl.projects.list(get_all=True, simple=True, membership=True)
+        project_map = {p.path_with_namespace: p.id for p in projects}
+        subgroups = []
+        root_path = ""
+
+    save_projects_cache(project_map, subgroups, root_path)
+    return {"project_map": project_map, "subgroups": subgroups, "root_path": root_path}
 
 
 @st.cache_resource
@@ -139,9 +188,10 @@ def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
     return project_data
 
 
-def fetch_merge_requests(project_names, updated_after, updated_before, progress_callback=None):
+def fetch_merge_requests(project_names, updated_after, updated_before, progress_callback=None, project_map=None):
     gl = get_gitlab_client()
-    project_map = fetch_all_projects()
+    if project_map is None:
+        project_map = fetch_all_projects()
     digest_data = []
 
     valid_projects = [
