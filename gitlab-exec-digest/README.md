@@ -39,6 +39,8 @@ LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced
 - Song recommendation that loosely matches the content
 - Authors with no demo-worthy MRs (docs-only, config changes, etc.) are still included with a low spark score rather than omitted
 
+When there are many authors, requests are automatically batched (up to 10 authors per request) to avoid response size limits. The UI shows per-batch progress and live countdown messaging on retries.
+
 ### Tab 5 — Podcast
 Generates a two-host conversational podcast from the fetched MR data using Gemini for script generation and Microsoft Edge TTS (`edge-tts`) for free, high-quality neural speech synthesis.
 

@@ -139,10 +139,20 @@ def render_recap_tab(digest_data):
 @st.fragment
 def render_snitch_tab(digest_data):
     if st.button("Auto Snitch", type="primary"):
-        with st.spinner("Snitching on teammates..."):
-            st.session_state["snitch_result"] = gemini.auto_snitch_with_gemini(
-                digest_data
-            )
+        progress_bar = st.progress(0)
+        status_msg = st.empty()
+
+        def on_status(msg):
+            status_msg.markdown(msg)
+
+        def on_batch_complete(done, total):
+            progress_bar.progress(done / total)
+
+        st.session_state["snitch_result"] = gemini.auto_snitch_with_gemini(
+            digest_data, on_batch_complete=on_batch_complete, on_status=on_status
+        )
+        progress_bar.empty()
+        status_msg.empty()
 
     if "snitch_result" not in st.session_state:
         return
