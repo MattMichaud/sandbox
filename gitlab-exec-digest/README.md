@@ -38,6 +38,7 @@ LLM-powered (via `gemini-3-flash-preview`, temperature 0.4) with schema-enforced
 - **Spark Score** (1–10): how likely the MR is to inspire teammates or expose them to a new technique or pattern; cards are sorted highest-to-lowest
 - Song recommendation that loosely matches the content
 - Authors with no demo-worthy MRs (docs-only, config changes, etc.) are still included with a low spark score rather than omitted
+- **Generate Song** button on each card to queue the MR for music generation in the Song Studio tab
 
 When there are many authors, requests are automatically batched (up to 10 authors per request) to avoid response size limits. The UI shows per-batch progress and live countdown messaging on retries.
 
@@ -54,7 +55,20 @@ Generates a two-host conversational podcast from the fetched MR data using Gemin
 - MP3 download
 - Expandable transcript showing the full Alex / Matt dialogue
 
-LLM results in Tabs 2, 3, 4, and 5 are persisted in session state and cleared automatically when new MR data is fetched.
+### Tab 6 — Song Studio *(experimental)*
+Generates a short music clip inspired by a selected MR using Google's **Lyria RealTime** API (`lyria-realtime-exp`). Can be reached by clicking **Generate Song** on any Auto Snitch card, or by selecting an MR directly from the dropdown.
+
+**Controls:**
+- **MR selector**: pre-populated when arriving from the Auto Snitch tab; otherwise pick any fetched MR
+- **Genre**: Electronic, Jazz, Rock, Ambient, Hip-Hop, Classical, Funk
+- **Mood**: Energetic, Chill, Tense, Triumphant, Mysterious, Playful
+- **Tempo**: Slow, Medium, Fast
+
+Gemini first derives a vivid music brief from the MR's technical content and the chosen controls, then sends it to Lyria RealTime to generate audio. Output is a 30-second stereo WAV file playable in-browser with a download option.
+
+> **Note:** Lyria RealTime is a preview API. Results may be inconsistent.
+
+LLM results in Tabs 2, 3, 4, 5, and 6 are persisted in session state and cleared automatically when new MR data is fetched.
 
 ## 🗂️ Project Structure
 
@@ -64,7 +78,8 @@ gitlab-exec-digest/
 ├── gitlab_data.py    # GitLab data layer — client, project/MR fetching, date utils
 ├── gemini.py         # Gemini LLM layer — schemas, prompt building, all LLM calls
 ├── podcast.py        # Audio layer — edge-tts synthesis and MP3 assembly
-└── tabs.py           # Tab renderers — Team Stats, Executive Digest, Contributor Recap, Auto Snitch, Podcast
+├── lyria.py          # Music layer — Lyria RealTime streaming and WAV assembly
+└── tabs.py           # Tab renderers — all six tabs
 ```
 
 ## 🛠️ Setup

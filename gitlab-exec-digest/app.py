@@ -116,7 +116,8 @@ with st.sidebar:
             st.session_state["locked_start"] = s
             st.session_state["locked_end"] = e
             # Clear previous LLM generations when fetching new data
-            for key in ("digest_result", "snitch_result", "recap_result", "podcast_script", "podcast_audio"):
+            for key in ("digest_result", "snitch_result", "recap_result", "podcast_script", "podcast_audio",
+                        "song_studio_mr", "song_lyria_prompt", "song_audio_bytes"):
                 st.session_state.pop(key, None)
 
 # --- Main Action Area ---
@@ -173,8 +174,8 @@ if st.session_state.get("fetch_active"):
             )
             st.markdown(f"_:gray[Timeframe: {date_range_str}]_")
 
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(
-                ["Team Stats", "Executive Digest", "Contributor Recap", "Auto Snitch Tool", "Podcast"]
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+                ["Team Stats", "Executive Digest", "Contributor Recap", "Auto Snitch Tool", "Podcast", "Song Studio"]
             )
             with tab1:
                 tabs.render_team_stats_tab(df)
@@ -186,3 +187,5 @@ if st.session_state.get("fetch_active"):
                 tabs.render_snitch_tab(digest_data)
             with tab5:
                 tabs.render_podcast_tab(digest_data)
+            with tab6:
+                tabs.render_song_studio_tab(digest_data)

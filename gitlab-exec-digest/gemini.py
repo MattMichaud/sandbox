@@ -9,7 +9,7 @@ from google.genai import types
 
 load_dotenv(override=True)
 
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options={"timeout": 120000})
 _MODEL = "gemini-3-flash-preview"
 _SNITCH_AUTHORS_PER_BATCH = 10
 _SNITCH_RETRY_DELAYS = [5, 10]
@@ -119,8 +119,13 @@ _ROLE_FRAMING = {
 }
 
 
+def _is_retryable(e: Exception) -> bool:
+    s = str(e).lower()
+    return "503" in str(e) or "timeout" in s or "timed out" in s or "deadline" in s
+
+
 def _generate(prompt, config, retries=3, base_delay=2):
-    """Call Gemini with exponential backoff on 503 / transient errors."""
+    """Call Gemini with exponential backoff on 503/timeout transient errors."""
     for attempt in range(retries):
         try:
             return _client.models.generate_content(
@@ -130,10 +135,10 @@ def _generate(prompt, config, retries=3, base_delay=2):
             )
         except Exception as e:
             is_last = attempt == retries - 1
-            if is_last or "503" not in str(e):
+            if is_last or not _is_retryable(e):
                 raise
             delay = base_delay * (2**attempt)
-            print(f"Gemini 503 on attempt {attempt + 1}, retrying in {delay}s…")
+            print(f"Gemini transient error on attempt {attempt + 1}, retrying in {delay}s… ({e})")
             time.sleep(delay)
 
 
@@ -274,16 +279,16 @@ DATA:
             return json.loads(response.text)
         except Exception as e:
             is_last = attempt == attempts - 1
-            if is_last or "503" not in str(e):
+            if is_last or not _is_retryable(e):
                 print(f"Auto Snitch batch failed: {e}")
                 print(f"Raw response text: {response.text if response else 'no response'}")
                 return None
             delay = _SNITCH_RETRY_DELAYS[attempt]
-            print(f"Auto Snitch 503 on attempt {attempt + 1}, retrying in {delay}s…")
+            print(f"Auto Snitch transient error on attempt {attempt + 1}, retrying in {delay}s… ({e})")
             for remaining in range(delay, 0, -1):
                 if on_status:
                     on_status(
-                        f"{batch_label} — 503 Service Unavailable. Retrying in {remaining}s…"
+                        f"{batch_label} — transient error, retrying in {remaining}s…"
                     )
                 time.sleep(1)
 
@@ -359,6 +364,22 @@ DATA:
         print(f"Contributor recap failed: {e}")
         print(f"Raw response text: {response.text if response else 'no response'}")
         return None
+
+
+def generate_lyria_prompt(mr: dict, genre: str, mood: str, tempo: str) -> str:
+    """Generate a Lyria-optimized music description from an MR and user controls."""
+    prompt = f"""You are a music director writing a brief for an AI music generator.
+
+Based on the merge request below, write a single vivid paragraph (2-3 sentences) describing a piece of music that captures the essence of this technical work. The music should be {genre} in genre, {mood} in mood, and {tempo} in tempo.
+
+MR Title: {mr.get('title', '')}
+Repo: {mr.get('repo', '')}
+Description: {mr.get('description', '')[:400]}
+
+Write only the music description — no preamble, no explanation. Be specific about instruments, texture, and energy. Do not mention code or software."""
+
+    response = _generate(prompt, types.GenerateContentConfig(temperature=0.8))
+    return response.text.strip()
 
 
 def generate_podcast_script(mrs_data, length_minutes, role, rate_percent):
