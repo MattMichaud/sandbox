@@ -33,9 +33,13 @@ with st.sidebar:
     cached_at = projects_data.get("cached_at")
     if cached_at:
         age = datetime.now() - datetime.fromisoformat(cached_at)
-        hours, remainder = divmod(int(age.total_seconds()), 3600)
+        total_seconds = int(age.total_seconds())
+        days, remainder = divmod(total_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
         minutes = remainder // 60
-        if hours > 0:
+        if days > 0:
+            age_str = f"{days}d {hours}h {minutes}m ago"
+        elif hours > 0:
             age_str = f"{hours}h {minutes}m ago"
         else:
             age_str = f"{minutes}m ago"

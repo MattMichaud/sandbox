@@ -102,10 +102,20 @@ def render_digest_tab(digest_data, timeframe):
 @st.fragment
 def render_recap_tab(digest_data):
     if st.button("Generate Recap", type="primary"):
-        with st.spinner("Generating contributor recap..."):
-            st.session_state["recap_result"] = gemini.contributor_recap_with_gemini(
-                digest_data
-            )
+        progress_bar = st.progress(0)
+        status_msg = st.empty()
+
+        def on_status(msg):
+            status_msg.markdown(msg)
+
+        def on_batch_complete(done, total):
+            progress_bar.progress(done / total)
+
+        st.session_state["recap_result"] = gemini.contributor_recap_with_gemini(
+            digest_data, on_batch_complete=on_batch_complete, on_status=on_status
+        )
+        progress_bar.empty()
+        status_msg.empty()
 
     if "recap_result" not in st.session_state:
         return

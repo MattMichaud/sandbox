@@ -11,7 +11,7 @@ load_dotenv(override=True)
 
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options={"timeout": 120000})
 _MODEL = "gemini-3-flash-preview"
-_SNITCH_AUTHORS_PER_BATCH = 10
+_AUTHORS_PER_BATCH = 10
 _SNITCH_RETRY_DELAYS = [5, 10]
 
 _DIGEST_SCHEMA = types.Schema(
@@ -302,11 +302,11 @@ def auto_snitch_with_gemini(mrs_data, on_batch_complete=None, on_status=None):
         by_author.setdefault(mr["author"], []).append(mr)
 
     authors = list(by_author.keys())
-    total_batches = math.ceil(len(authors) / _SNITCH_AUTHORS_PER_BATCH)
+    total_batches = math.ceil(len(authors) / _AUTHORS_PER_BATCH)
 
     all_results = []
-    for batch_num, i in enumerate(range(0, len(authors), _SNITCH_AUTHORS_PER_BATCH), start=1):
-        batch_authors = set(authors[i : i + _SNITCH_AUTHORS_PER_BATCH])
+    for batch_num, i in enumerate(range(0, len(authors), _AUTHORS_PER_BATCH), start=1):
+        batch_authors = set(authors[i : i + _AUTHORS_PER_BATCH])
         batch_mrs = [mr for mr in mrs_data if mr["author"] in batch_authors]
         batch_label = f"Batch {batch_num}/{total_batches}"
         print(f"Auto Snitch: processing {batch_label} ({len(batch_authors)} authors)")
@@ -323,10 +323,12 @@ def auto_snitch_with_gemini(mrs_data, on_batch_complete=None, on_status=None):
     return all_results
 
 
-def contributor_recap_with_gemini(mrs_data):
-    if not mrs_data:
-        return []
+def _recap_batch(mrs_data, on_status=None, batch_label=""):
+    """Run the contributor recap Gemini call for a subset of MRs and return parsed results.
 
+    Retries on 503 errors using _SNITCH_RETRY_DELAYS, showing a per-second countdown
+    via on_status if provided.
+    """
     mr_context = _build_mr_context(mrs_data)
 
     prompt = f"""
@@ -347,23 +349,67 @@ DATA:
 {mr_context}
 """
 
+    config = types.GenerateContentConfig(
+        temperature=0.2,
+        top_p=0.95,
+        top_k=40,
+        response_mime_type="application/json",
+        response_schema=_RECAP_SCHEMA,
+    )
+    attempts = len(_SNITCH_RETRY_DELAYS) + 1
     response = None
-    try:
-        response = _generate(
-            prompt,
-            types.GenerateContentConfig(
-                temperature=0.2,
-                top_p=0.95,
-                top_k=40,
-                response_mime_type="application/json",
-                response_schema=_RECAP_SCHEMA,
-            ),
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        print(f"Contributor recap failed: {e}")
-        print(f"Raw response text: {response.text if response else 'no response'}")
-        return None
+    for attempt in range(attempts):
+        if on_status and attempt > 0:
+            on_status(f"{batch_label} — retrying (attempt {attempt + 1}/{attempts})…")
+        try:
+            response = _client.models.generate_content(
+                model=_MODEL, contents=prompt, config=config
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            is_last = attempt == attempts - 1
+            if is_last or not _is_retryable(e):
+                print(f"Contributor recap batch failed: {e}")
+                print(f"Raw response text: {response.text if response else 'no response'}")
+                return None
+            delay = _SNITCH_RETRY_DELAYS[attempt]
+            print(f"Contributor recap transient error on attempt {attempt + 1}, retrying in {delay}s… ({e})")
+            for remaining in range(delay, 0, -1):
+                if on_status:
+                    on_status(
+                        f"{batch_label} — transient error, retrying in {remaining}s…"
+                    )
+                time.sleep(1)
+
+
+def contributor_recap_with_gemini(mrs_data, on_batch_complete=None, on_status=None):
+    if not mrs_data:
+        return []
+
+    by_author = {}
+    for mr in mrs_data:
+        by_author.setdefault(mr["author"], []).append(mr)
+
+    authors = list(by_author.keys())
+    total_batches = math.ceil(len(authors) / _AUTHORS_PER_BATCH)
+
+    all_results = []
+    for batch_num, i in enumerate(range(0, len(authors), _AUTHORS_PER_BATCH), start=1):
+        batch_authors = set(authors[i : i + _AUTHORS_PER_BATCH])
+        batch_mrs = [mr for mr in mrs_data if mr["author"] in batch_authors]
+        batch_label = f"Batch {batch_num}/{total_batches}"
+        print(f"Contributor recap: processing {batch_label} ({len(batch_authors)} authors)")
+        if on_status:
+            on_status(f"Analyzing {batch_label}…")
+        batch_results = _recap_batch(batch_mrs, on_status=on_status, batch_label=batch_label)
+        if batch_results:
+            all_results.extend(batch_results)
+        else:
+            print(f"Contributor recap: {batch_label} returned no results, continuing")
+        if on_batch_complete:
+            on_batch_complete(batch_num, total_batches)
+
+    return all_results
 
 
 def generate_lyria_prompt(mr: dict, genre: str, mood: str, tempo: str) -> str:
