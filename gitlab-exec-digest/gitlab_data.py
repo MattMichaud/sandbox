@@ -157,7 +157,11 @@ def _fetch_single_project_mrs(gl, pid, name, updated_after, updated_before):
 
             author_username = mr.author.get("username", "").lower()
             author_name = mr.author.get("name", "").lower()
-            if "renovate" in author_username or "renovate" in author_name:
+            if (
+                "renovate" in author_username
+                or "renovate" in author_name
+                or "dev tooling migration account" in author_name
+            ):
                 continue
 
             changes = mr.changes()
