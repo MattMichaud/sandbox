@@ -1,4 +1,5 @@
 import streamlit as st
+from collections import Counter
 from datetime import datetime, timedelta
 import pandas as pd
 import gitlab_data
@@ -144,7 +145,8 @@ with st.sidebar:
             st.session_state["locked_end"] = e
             # Clear previous LLM generations when fetching new data
             for key in ("digest_result", "snitch_result", "recap_result", "podcast_script", "podcast_audio",
-                        "song_studio_mr", "song_lyria_prompt", "song_audio_bytes"):
+                        "song_studio_mr", "song_lyria_prompt", "song_audio_bytes",
+                        "locked_authors", "mr_cache"):
                 st.session_state.pop(key, None)
 
 # --- Main Action Area ---
@@ -174,9 +176,37 @@ if st.session_state.get("fetch_active"):
             progress_bar.empty()
             st.session_state["mr_cache"] = {"data": digest_data}
 
+        # --- Author filter in sidebar (only after data is fetched) ---
+        if digest_data:
+            author_counts = Counter(mr["author"] for mr in digest_data)
+            # Sorted by MR count descending (fewest first so top of exclude list = least active)
+            sorted_authors = sorted(author_counts.keys(), key=lambda a: (author_counts[a], a.casefold()))
+            author_labels = {a: f"{a} ({author_counts[a]} MRs)" for a in sorted_authors}
+
+            with st.sidebar:
+                st.header("3. Author Filter")
+                excluded_authors = st.multiselect(
+                    "Exclude Authors",
+                    options=sorted_authors,
+                    default=[],
+                    format_func=lambda a: author_labels[a],
+                )
+
+            selected_authors = [a for a in sorted_authors if a not in set(excluded_authors)]
+            digest_data = [mr for mr in digest_data if mr["author"] not in set(excluded_authors)]
+
         if not digest_data:
             st.info("No activity found for these repos in the selected timeframe.")
         else:
+            # Staleness warning: check if author selection changed since last LLM generation
+            llm_keys = ("digest_result", "snitch_result", "recap_result", "podcast_script")
+            has_llm_results = any(k in st.session_state for k in llm_keys)
+            if has_llm_results:
+                if "locked_authors" not in st.session_state:
+                    st.session_state["locked_authors"] = set(selected_authors)
+                elif set(selected_authors) != st.session_state["locked_authors"]:
+                    st.warning("Author selection has changed since results were generated. Re-run to update.")
+
             st.subheader("📊 Activity Overview")
             df = pd.DataFrame(digest_data)
             m1, m2, m3 = st.columns(3)
