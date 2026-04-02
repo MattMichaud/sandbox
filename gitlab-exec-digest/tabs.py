@@ -30,10 +30,21 @@ def _configure_chart(chart):
 @st.fragment
 def render_digest_tab(digest_data, timeframe):
     if st.button("Generate Digest", type="primary"):
-        with st.spinner("Analyzing data..."):
-            st.session_state["digest_result"] = gemini.summarize_with_gemini(
-                digest_data, timeframe
-            )
+        progress_bar = st.progress(0)
+        status_msg = st.empty()
+
+        def on_status(msg):
+            status_msg.markdown(msg)
+
+        def on_batch_complete(done, total):
+            progress_bar.progress(done / total)
+
+        st.session_state["digest_result"] = gemini.summarize_with_gemini(
+            digest_data, timeframe,
+            on_batch_complete=on_batch_complete, on_status=on_status,
+        )
+        progress_bar.empty()
+        status_msg.empty()
 
     if "digest_result" not in st.session_state:
         return

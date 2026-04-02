@@ -160,12 +160,16 @@ CODE SNIPPET:
     return "".join(parts)
 
 
-def summarize_with_gemini(mrs_data, timeframe):
-    if not mrs_data:
-        return {}
+_DIGEST_MAX_IMPACTFUL = 10
+_DIGEST_MAX_TECHNICAL = 10
 
+
+def _digest_batch(mrs_data, timeframe, max_impactful, max_technical, on_status=None, batch_label=""):
+    """Run the digest Gemini call for a subset of MRs and return parsed results.
+
+    Retries on 503/timeout errors using _SNITCH_RETRY_DELAYS.
+    """
     current_date = datetime.now().strftime("%B %d, %Y")
-    total_mrs = len(mrs_data)
     mr_context = _build_mr_context(mrs_data)
 
     prompt = f"""
@@ -177,14 +181,14 @@ Today's Date: {current_date}
 The executive wants to see high-level progress and interesting technical wins.
 
 Output a strict JSON object with the following keys:
-- "executive_summary": 1-2 sentences on overall velocity. Mention that {total_mrs} MRs were merged.
-- "impactful_changes": A list of objects (max 5) focusing strictly on BUSINESS VALUE and USER IMPACT.
+- "executive_summary": 1-2 sentences on overall velocity for THIS batch of {len(mrs_data)} MRs.
+- "impactful_changes": A list of objects (max {max_impactful}) focusing strictly on BUSINESS VALUE and USER IMPACT.
     - "title": A concise, business-friendly title summarizing the impact (do not use the raw MR title).
     - "description": A focus on the "Why" (business value).
     - "url": The MR URL.
     - "author": The MR Author's name.
     - "context_area": Inferred business area, application name, or technology (e.g. "Payments", "Frontend", "Infrastructure").
-- "technical_highlights": A list of objects (up to 10) noting interesting architectural choices, refactors, or library updates.
+- "technical_highlights": A list of objects (up to {max_technical}) noting interesting architectural choices, refactors, or library updates.
     - "title": A short, specific title describing the technical change.
     - "description": Focus strictly on the "How" (engineering details). Do NOT repeat high-level features listed in "impactful_changes".
     - "url": The URL of the MR this change belongs to.
@@ -194,23 +198,148 @@ DATA:
 {mr_context}
 """
 
+    config = types.GenerateContentConfig(
+        temperature=0.2,
+        top_p=0.95,
+        top_k=40,
+        response_mime_type="application/json",
+        response_schema=_DIGEST_SCHEMA,
+    )
+    attempts = len(_SNITCH_RETRY_DELAYS) + 1
     response = None
-    try:
-        response = _generate(
-            prompt,
-            types.GenerateContentConfig(
-                temperature=0.2,
-                top_p=0.95,
-                top_k=40,
-                response_mime_type="application/json",
-                response_schema=_DIGEST_SCHEMA,
-            ),
+    for attempt in range(attempts):
+        if on_status and attempt > 0:
+            on_status(f"{batch_label} — retrying (attempt {attempt + 1}/{attempts})…")
+        try:
+            response = _client.models.generate_content(
+                model=_MODEL, contents=prompt, config=config
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            is_last = attempt == attempts - 1
+            if is_last or not _is_retryable(e):
+                print(f"Digest batch failed: {e}")
+                print(f"Raw response text: {response.text if response else 'no response'}")
+                return None
+            delay = _SNITCH_RETRY_DELAYS[attempt]
+            print(f"Digest transient error on attempt {attempt + 1}, retrying in {delay}s… ({e})")
+            for remaining in range(delay, 0, -1):
+                if on_status:
+                    on_status(
+                        f"{batch_label} — transient error, retrying in {remaining}s…"
+                    )
+                time.sleep(1)
+
+
+def _merge_digest_batches(batch_results, timeframe, total_mrs, on_status=None):
+    """Merge multiple batch digest results into one final digest via Gemini."""
+    batch_summaries = json.dumps(batch_results, indent=2)
+
+    prompt = f"""
+You are a Technical Chief of Staff. You have been given multiple partial digest results from different batches of Merge Requests covering the {timeframe}. Merge them into a single cohesive executive digest.
+
+Total MRs across all batches: {total_mrs}
+
+Rules:
+- "executive_summary": Write 1-2 fresh sentences on overall velocity. Mention that {total_mrs} MRs were merged. Synthesize themes across all batches.
+- "impactful_changes": Select the top {_DIGEST_MAX_IMPACTFUL} most impactful changes across all batches. Keep the original url, author, and context_area. You may rewrite title and description for cohesion.
+- "technical_highlights": Select the top {_DIGEST_MAX_TECHNICAL} most interesting technical highlights across all batches. Keep the original url and author. You may rewrite title and description for cohesion.
+
+Do NOT invent new items — only select and refine from the provided batch results.
+
+BATCH RESULTS:
+{batch_summaries}
+"""
+
+    if on_status:
+        on_status("Merging batch results into final digest…")
+
+    config = types.GenerateContentConfig(
+        temperature=0.2,
+        top_p=0.95,
+        top_k=40,
+        response_mime_type="application/json",
+        response_schema=_DIGEST_SCHEMA,
+    )
+    attempts = len(_SNITCH_RETRY_DELAYS) + 1
+    response = None
+    for attempt in range(attempts):
+        try:
+            response = _client.models.generate_content(
+                model=_MODEL, contents=prompt, config=config
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            is_last = attempt == attempts - 1
+            if is_last or not _is_retryable(e):
+                print(f"Digest merge failed: {e}")
+                print(f"Raw response text: {response.text if response else 'no response'}")
+                return None
+            delay = _SNITCH_RETRY_DELAYS[attempt]
+            print(f"Digest merge transient error on attempt {attempt + 1}, retrying in {delay}s… ({e})")
+            for remaining in range(delay, 0, -1):
+                if on_status:
+                    on_status(f"Merge step — transient error, retrying in {remaining}s…")
+                time.sleep(1)
+
+
+def summarize_with_gemini(mrs_data, timeframe, on_batch_complete=None, on_status=None):
+    if not mrs_data:
+        return {}
+
+    by_author = {}
+    for mr in mrs_data:
+        by_author.setdefault(mr["author"], []).append(mr)
+
+    authors = list(by_author.keys())
+    total_batches = math.ceil(len(authors) / _AUTHORS_PER_BATCH)
+
+    # Distribute per-batch limits so totals approximate the final maximums
+    max_impactful = max(1, math.ceil(_DIGEST_MAX_IMPACTFUL / total_batches))
+    max_technical = max(1, math.ceil(_DIGEST_MAX_TECHNICAL / total_batches))
+
+    # Single batch — skip the merge step
+    if total_batches == 1:
+        if on_status:
+            on_status("Analyzing MRs…")
+        result = _digest_batch(
+            mrs_data, timeframe, _DIGEST_MAX_IMPACTFUL, _DIGEST_MAX_TECHNICAL,
+            on_status=on_status, batch_label="Batch 1/1",
         )
-        return json.loads(response.text)
-    except Exception as e:
-        print(f"Summarization failed with Gemini 3: {e}")
-        print(f"Raw response text: {response.text if response else 'no response'}")
+        if on_batch_complete:
+            on_batch_complete(1, 1)
+        return result
+
+    # Multiple batches — collect partial results, then merge
+    total_steps = total_batches + 1  # +1 for the merge step
+    batch_results = []
+    for batch_num, i in enumerate(range(0, len(authors), _AUTHORS_PER_BATCH), start=1):
+        batch_authors = set(authors[i : i + _AUTHORS_PER_BATCH])
+        batch_mrs = [mr for mr in mrs_data if mr["author"] in batch_authors]
+        batch_label = f"Batch {batch_num}/{total_batches}"
+        print(f"Digest: processing {batch_label} ({len(batch_authors)} authors, {len(batch_mrs)} MRs)")
+        if on_status:
+            on_status(f"Analyzing {batch_label}…")
+        batch_result = _digest_batch(
+            batch_mrs, timeframe, max_impactful, max_technical,
+            on_status=on_status, batch_label=batch_label,
+        )
+        if batch_result:
+            batch_results.append(batch_result)
+        else:
+            print(f"Digest: {batch_label} returned no results, continuing")
+        if on_batch_complete:
+            on_batch_complete(batch_num, total_steps)
+
+    if not batch_results:
         return None
+
+    # Final merge pass
+    print(f"Digest: merging {len(batch_results)} batch results")
+    merged = _merge_digest_batches(batch_results, timeframe, len(mrs_data), on_status=on_status)
+    if on_batch_complete:
+        on_batch_complete(total_steps, total_steps)
+    return merged
 
 
 def _snitch_batch(mrs_data, on_status=None, batch_label=""):
