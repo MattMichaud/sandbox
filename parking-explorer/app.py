@@ -25,6 +25,16 @@ st.set_page_config(page_title="Franklin Parking Explorer", page_icon="🅿️", 
 GARAGE_COLORS = ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#D55E00", "#56B4E9"]
 WEEKDAY_COLOR, WEEKEND_COLOR = "#0072B2", "#E69F00"
 DOW_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# Per-day line colors (Okabe-Ito; pale yellow dropped — too faint for a line).
+DOW_COLORS = {
+    "Monday": "#0072B2",     # blue
+    "Tuesday": "#009E73",    # bluish green
+    "Wednesday": "#D55E00",  # vermillion
+    "Thursday": "#CC79A7",   # reddish purple
+    "Friday": "#E69F00",     # orange
+    "Saturday": "#56B4E9",   # sky blue
+    "Sunday": "#000000",     # black
+}
 FLOW_IN_COLOR, FLOW_OUT_COLOR = "#0072B2", "#D55E00"
 
 
@@ -135,7 +145,7 @@ with st.sidebar:
 
     selected_garages = st.multiselect("Garages", all_garages, default=all_garages)
 
-    default_start = max(min_date, max_date - dt.timedelta(days=14))
+    default_start = max(min_date, max_date - dt.timedelta(days=28))
     date_range = st.date_input(
         "Date range",
         value=(default_start, max_date),
@@ -370,56 +380,112 @@ with tab_patterns:
         st.altair_chart(heatmap, use_container_width=True)
 
     st.divider()
-    st.subheader("Typical day: weekday vs weekend")
-    st.caption(
-        "Median occupancy through the day with a p10–p90 spread band "
-        "(capacity-weighted across selected garages). The band shows how variable each hour is."
+    st.subheader("Typical day")
+    mode = st.segmented_control(
+        "Compare",
+        ["Weekday vs weekend", "Specific days"],
+        default="Weekday vs weekend",
+        label_visibility="collapsed",
+        key="typical_day_mode",
     )
-    curve = q(
-        f"""
-        WITH snap AS (
-            SELECT request_timestamp, hour(ts_local) AS hr,
-                   CASE WHEN dayofweek(ts_local) IN (0, 6) THEN 'Weekend'
-                        ELSE 'Weekday' END AS day_type,
-                   100.0 * sum(occupied_bays) / nullif(sum(total_bays), 0) AS occ
-            FROM parking WHERE {where}
-            GROUP BY request_timestamp, hr, day_type
+
+    curve, domain, color_range = None, None, None
+    if mode == "Specific days":
+        picked = st.multiselect(
+            "Days of week",
+            DOW_ORDER,
+            default=["Monday", "Friday"],
+            key="typical_day_picks",
         )
-        SELECT hr, day_type, median(occ) AS med,
-               quantile_cont(occ, 0.1) AS lo, quantile_cont(occ, 0.9) AS hi
-        FROM snap GROUP BY hr, day_type ORDER BY hr
-        """,
-        base_params,
-        version,
-    )
-    if curve.empty:
+        picked = [d for d in DOW_ORDER if d in picked]  # stable weekly order
+        if not picked:
+            st.info("Pick at least one day of week to compare.")
+        else:
+            day_ph = ",".join(["?"] * len(picked))
+            curve = q(
+                f"""
+                WITH snap AS (
+                    SELECT request_timestamp, hour(ts_local) AS hr,
+                           dayname(ts_local) AS day_type,
+                           100.0 * sum(occupied_bays) / nullif(sum(total_bays), 0) AS occ
+                    FROM parking WHERE {where} AND dayname(ts_local) IN ({day_ph})
+                    GROUP BY request_timestamp, hr, day_type
+                )
+                SELECT hr, day_type, median(occ) AS med,
+                       quantile_cont(occ, 0.1) AS lo, quantile_cont(occ, 0.9) AS hi
+                FROM snap GROUP BY hr, day_type ORDER BY hr
+                """,
+                base_params + tuple(picked),
+                version,
+            )
+            domain, color_range = picked, [DOW_COLORS[d] for d in picked]
+    else:
+        curve = q(
+            f"""
+            WITH snap AS (
+                SELECT request_timestamp, hour(ts_local) AS hr,
+                       CASE WHEN dayofweek(ts_local) IN (0, 6) THEN 'Weekend'
+                            ELSE 'Weekday' END AS day_type,
+                       100.0 * sum(occupied_bays) / nullif(sum(total_bays), 0) AS occ
+                FROM parking WHERE {where}
+                GROUP BY request_timestamp, hr, day_type
+            )
+            SELECT hr, day_type, median(occ) AS med,
+                   quantile_cont(occ, 0.1) AS lo, quantile_cont(occ, 0.9) AS hi
+            FROM snap GROUP BY hr, day_type ORDER BY hr
+            """,
+            base_params,
+            version,
+        )
+        domain, color_range = ["Weekday", "Weekend"], [WEEKDAY_COLOR, WEEKEND_COLOR]
+
+    if curve is None:
+        pass  # no days selected — message already shown
+    elif curve.empty:
         st.info("No data in the selected range.")
     else:
+        # A p10–p90 band per series reads clearly for 1–2 series; beyond that the
+        # overlapping bands muddy the chart, so fall back to median lines only.
+        show_band = curve["day_type"].nunique() <= 2
+        st.caption(
+            "Median occupancy through the day"
+            + (", with a p10–p90 spread band," if show_band else "")
+            + " capacity-weighted across selected garages."
+            + ("" if show_band else " Spread band hidden with 3+ series to keep the chart readable.")
+        )
         day_color = alt.Color(
             "day_type:N",
-            scale=alt.Scale(domain=["Weekday", "Weekend"], range=[WEEKDAY_COLOR, WEEKEND_COLOR]),
+            scale=alt.Scale(domain=domain, range=color_range),
             legend=alt.Legend(title=None, orient="top"),
         )
+        x_enc = alt.X("hr:Q", title="Hour of day", scale=alt.Scale(domain=[0, 23]))
+        y_enc = alt.Y("med:Q", title="Occupancy %", scale=alt.Scale(domain=[0, 100]))
         base = alt.Chart(curve)
-        band = base.mark_area(opacity=0.2).encode(
-            x=alt.X("hr:Q", title="Hour of day", scale=alt.Scale(domain=[0, 23])),
-            y=alt.Y("lo:Q", title="Occupancy %", scale=alt.Scale(domain=[0, 100])),
-            y2="hi:Q",
-            color=day_color,
+        layers = []
+        if show_band:
+            layers.append(
+                base.mark_area(opacity=0.2).encode(
+                    x=x_enc,
+                    y=alt.Y("lo:Q", title="Occupancy %", scale=alt.Scale(domain=[0, 100])),
+                    y2="hi:Q",
+                    color=day_color,
+                )
+            )
+        layers.append(
+            base.mark_line(strokeWidth=2, point=True).encode(
+                x=x_enc,
+                y=y_enc,
+                color=day_color,
+                tooltip=[
+                    alt.Tooltip("hr:Q", title="Hour"),
+                    alt.Tooltip("day_type:N", title=""),
+                    alt.Tooltip("med:Q", title="Median %", format=".0f"),
+                    alt.Tooltip("lo:Q", title="p10 %", format=".0f"),
+                    alt.Tooltip("hi:Q", title="p90 %", format=".0f"),
+                ],
+            )
         )
-        med_line = base.mark_line(strokeWidth=2, point=True).encode(
-            x="hr:Q",
-            y="med:Q",
-            color=day_color,
-            tooltip=[
-                alt.Tooltip("hr:Q", title="Hour"),
-                alt.Tooltip("day_type:N", title=""),
-                alt.Tooltip("med:Q", title="Median %", format=".0f"),
-                alt.Tooltip("lo:Q", title="p10 %", format=".0f"),
-                alt.Tooltip("hi:Q", title="p90 %", format=".0f"),
-            ],
-        )
-        st.altair_chart((band + med_line).properties(height=320), use_container_width=True)
+        st.altair_chart(alt.layer(*layers).properties(height=320), use_container_width=True)
 
     st.divider()
     st.subheader("Net flow through the day")
