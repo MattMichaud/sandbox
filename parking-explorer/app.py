@@ -8,13 +8,14 @@ UI stays responsive over ~1.5M rows.
 from __future__ import annotations
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
 from parking import anomalies, store
-from parking.config import DB_PATH, TABLE_NAME
+from parking.config import DB_PATH, LOCAL_TZ, TABLE_NAME
 from parking.sync import sync
 
 st.set_page_config(page_title="Franklin Parking Explorer", page_icon="🅿️", layout="wide")
@@ -24,6 +25,17 @@ st.set_page_config(page_title="Franklin Parking Explorer", page_icon="🅿️", 
 GARAGE_COLORS = ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#D55E00", "#56B4E9"]
 WEEKDAY_COLOR, WEEKEND_COLOR = "#0072B2", "#E69F00"
 DOW_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+FLOW_IN_COLOR, FLOW_OUT_COLOR = "#0072B2", "#D55E00"
+
+
+def _humanize_age(td: dt.timedelta) -> str:
+    """Compact human-readable age, e.g. '12 min', '3h 5m', '2d 4h'."""
+    mins = int(td.total_seconds() // 60)
+    if mins < 60:
+        return f"{mins} min"
+    if mins < 60 * 24:
+        return f"{mins // 60}h {mins % 60}m"
+    return f"{mins // (60 * 24)}d {(mins // 60) % 24}h"
 
 
 # --------------------------------------------------------------------------- #
@@ -147,6 +159,22 @@ base_params = date_params + g_params
 
 st.title("🅿️ Franklin Parking Explorer")
 
+# Freshness banner. The cache is only as current as the last sync; if it stays
+# stale right after a sync, the upstream collector/Lambda is likely down.
+_age = dt.datetime.now(ZoneInfo(LOCAL_TZ)).replace(tzinfo=None) - pd.Timestamp(latest_ts).to_pydatetime()
+if _age > dt.timedelta(days=1):
+    st.error(
+        f"⚠️ Data is stale — newest snapshot is **{_humanize_age(_age)}** old "
+        f"({pd.Timestamp(latest_ts):%b %-d, %Y · %-I:%M %p}). Click **Sync new data** in the "
+        "sidebar; if it stays stale, the collector/Lambda may be down."
+    )
+elif _age > dt.timedelta(minutes=30):
+    st.warning(
+        f"⚠️ Cached data is **{_humanize_age(_age)}** old "
+        f"({pd.Timestamp(latest_ts):%-I:%M %p}) — snapshots arrive every 5 min. "
+        "**Sync new data** to refresh."
+    )
+
 tab_overview, tab_patterns, tab_anomalies, tab_drill, tab_data = st.tabs(
     ["Overview", "Patterns", "Anomalies", "Garage detail", "Data"]
 )
@@ -249,9 +277,57 @@ with tab_overview:
         )
         st.altair_chart(line, use_container_width=True)
 
+    st.divider()
+    st.subheader("Daily peak occupancy calendar")
+    st.caption(
+        "Each cell is one day (rows = months, columns = day of month), shaded by that day's "
+        "peak occupancy across selected garages. Full history — ignores the date slider."
+    )
+    cal = q(
+        f"""
+        WITH snap AS (
+            SELECT request_timestamp, ts_local::DATE AS day,
+                   100.0 * sum(occupied_bays) / nullif(sum(total_bays), 0) AS occ
+            FROM parking WHERE node_type='garage' AND garage IN {g_clause}
+            GROUP BY request_timestamp, day
+        )
+        SELECT day, max(occ) AS peak, avg(occ) AS avg_occ
+        FROM snap GROUP BY day ORDER BY day
+        """,
+        g_params,
+        version,
+    )
+    if cal.empty:
+        st.info("No data.")
+    else:
+        cal["day"] = pd.to_datetime(cal["day"])
+        cal["month"] = cal["day"].dt.strftime("%b %Y")
+        cal["dom"] = cal["day"].dt.day
+        month_order = cal.sort_values("day")["month"].drop_duplicates().tolist()
+        calendar = (
+            alt.Chart(cal)
+            .mark_rect(stroke="white", strokeWidth=1)
+            .encode(
+                x=alt.X("dom:O", title="Day of month"),
+                y=alt.Y("month:N", sort=month_order, title=None),
+                color=alt.Color(
+                    "peak:Q",
+                    scale=alt.Scale(scheme="reds", domain=[0, 100]),
+                    legend=alt.Legend(title="Daily peak %"),
+                ),
+                tooltip=[
+                    alt.Tooltip("day:T", title="Date"),
+                    alt.Tooltip("peak:Q", title="Peak %", format=".0f"),
+                    alt.Tooltip("avg_occ:Q", title="Avg %", format=".0f"),
+                ],
+            )
+            .properties(height=alt.Step(22))
+        )
+        st.altair_chart(calendar, use_container_width=True)
+
 
 # --------------------------------------------------------------------------- #
-# Patterns: hour × day-of-week heatmap + weekday/weekend daily curve
+# Patterns: hour × weekday heatmap, typical-day spread band, net flow
 # --------------------------------------------------------------------------- #
 with tab_patterns:
     st.subheader("When is it full?")
@@ -294,15 +370,24 @@ with tab_patterns:
         st.altair_chart(heatmap, use_container_width=True)
 
     st.divider()
-    st.subheader("Average day: weekday vs weekend")
+    st.subheader("Typical day: weekday vs weekend")
+    st.caption(
+        "Median occupancy through the day with a p10–p90 spread band "
+        "(capacity-weighted across selected garages). The band shows how variable each hour is."
+    )
     curve = q(
         f"""
-        SELECT hour(ts_local) AS hr,
-               CASE WHEN dayofweek(ts_local) IN (0, 6) THEN 'Weekend'
-                    ELSE 'Weekday' END AS day_type,
-               100.0 * sum(occupied_bays) / nullif(sum(total_bays), 0) AS occupancy_pct
-        FROM parking WHERE {where}
-        GROUP BY 1, 2 ORDER BY 1
+        WITH snap AS (
+            SELECT request_timestamp, hour(ts_local) AS hr,
+                   CASE WHEN dayofweek(ts_local) IN (0, 6) THEN 'Weekend'
+                        ELSE 'Weekday' END AS day_type,
+                   100.0 * sum(occupied_bays) / nullif(sum(total_bays), 0) AS occ
+            FROM parking WHERE {where}
+            GROUP BY request_timestamp, hr, day_type
+        )
+        SELECT hr, day_type, median(occ) AS med,
+               quantile_cont(occ, 0.1) AS lo, quantile_cont(occ, 0.9) AS hi
+        FROM snap GROUP BY hr, day_type ORDER BY hr
         """,
         base_params,
         version,
@@ -310,31 +395,83 @@ with tab_patterns:
     if curve.empty:
         st.info("No data in the selected range.")
     else:
-        curve_chart = (
-            alt.Chart(curve)
-            .mark_line(strokeWidth=2, point=True)
+        day_color = alt.Color(
+            "day_type:N",
+            scale=alt.Scale(domain=["Weekday", "Weekend"], range=[WEEKDAY_COLOR, WEEKEND_COLOR]),
+            legend=alt.Legend(title=None, orient="top"),
+        )
+        base = alt.Chart(curve)
+        band = base.mark_area(opacity=0.2).encode(
+            x=alt.X("hr:Q", title="Hour of day", scale=alt.Scale(domain=[0, 23])),
+            y=alt.Y("lo:Q", title="Occupancy %", scale=alt.Scale(domain=[0, 100])),
+            y2="hi:Q",
+            color=day_color,
+        )
+        med_line = base.mark_line(strokeWidth=2, point=True).encode(
+            x="hr:Q",
+            y="med:Q",
+            color=day_color,
+            tooltip=[
+                alt.Tooltip("hr:Q", title="Hour"),
+                alt.Tooltip("day_type:N", title=""),
+                alt.Tooltip("med:Q", title="Median %", format=".0f"),
+                alt.Tooltip("lo:Q", title="p10 %", format=".0f"),
+                alt.Tooltip("hi:Q", title="p90 %", format=".0f"),
+            ],
+        )
+        st.altair_chart((band + med_line).properties(height=320), use_container_width=True)
+
+    st.divider()
+    st.subheader("Net flow through the day")
+    st.caption(
+        "Average net change in parked cars by hour — bars above zero mean the garages "
+        "are filling, below zero emptying. Capacity across selected garages."
+    )
+    flow = q(
+        f"""
+        WITH snap AS (
+            SELECT request_timestamp, ts_local, sum(occupied_bays) AS occ
+            FROM parking WHERE {where}
+            GROUP BY request_timestamp, ts_local
+        ),
+        deltas AS (
+            SELECT ts_local,
+                   occ - lag(occ) OVER (ORDER BY ts_local) AS delta,
+                   epoch(ts_local) - epoch(lag(ts_local) OVER (ORDER BY ts_local)) AS gap_s
+            FROM snap
+        )
+        SELECT hour(ts_local) AS hr, avg(delta) * 12 AS net_per_hour
+        FROM deltas WHERE gap_s BETWEEN 1 AND 900
+        GROUP BY 1 ORDER BY 1
+        """,
+        base_params,
+        version,
+    )
+    if flow.empty:
+        st.info("No data in the selected range.")
+    else:
+        flow["direction"] = flow["net_per_hour"].ge(0).map({True: "Filling", False: "Emptying"})
+        flow_chart = (
+            alt.Chart(flow)
+            .mark_bar()
             .encode(
-                x=alt.X("hr:Q", title="Hour of day", scale=alt.Scale(domain=[0, 23])),
-                y=alt.Y(
-                    "occupancy_pct:Q", title="Occupancy %", scale=alt.Scale(domain=[0, 100])
-                ),
+                x=alt.X("hr:O", title="Hour of day"),
+                y=alt.Y("net_per_hour:Q", title="Avg net change (≈ cars/hour)"),
                 color=alt.Color(
-                    "day_type:N",
+                    "direction:N",
                     scale=alt.Scale(
-                        domain=["Weekday", "Weekend"],
-                        range=[WEEKDAY_COLOR, WEEKEND_COLOR],
+                        domain=["Filling", "Emptying"], range=[FLOW_IN_COLOR, FLOW_OUT_COLOR]
                     ),
                     legend=alt.Legend(title=None, orient="top"),
                 ),
                 tooltip=[
-                    alt.Tooltip("hr:Q", title="Hour"),
-                    alt.Tooltip("day_type:N", title=""),
-                    alt.Tooltip("occupancy_pct:Q", title="Occupancy %", format=".0f"),
+                    alt.Tooltip("hr:O", title="Hour"),
+                    alt.Tooltip("net_per_hour:Q", title="Net cars/hour", format="+.0f"),
                 ],
             )
-            .properties(height=320)
+            .properties(height=300)
         )
-        st.altair_chart(curve_chart, use_container_width=True)
+        st.altair_chart(flow_chart, use_container_width=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -487,13 +624,13 @@ table and drive the severity slider.
 with tab_drill:
     garage = st.selectbox("Garage", selected_garages)
     levels = q(
-        """
+        r"""
         SELECT level, available_bays, occupied_bays, total_bays, occupancy_pct
         FROM parking
         WHERE node_type='level' AND garage = ?
           AND request_timestamp = (SELECT max(request_timestamp) FROM parking)
           AND total_bays > 0
-        ORDER BY occupancy_pct DESC
+        ORDER BY try_cast(regexp_extract(level, '\d+') AS INTEGER) NULLS LAST, level
         """,
         (garage,),
         version,
@@ -507,7 +644,7 @@ with tab_drill:
             .mark_bar(cornerRadiusEnd=4, height=alt.RelativeBandSize(0.7))
             .encode(
                 x=alt.X("available_bays:Q", title="Available bays"),
-                y=alt.Y("level:N", sort="-x", title=None),
+                y=alt.Y("level:N", sort=levels["level"].tolist(), title=None),
                 color=alt.Color(
                     "occupancy_pct:Q",
                     scale=alt.Scale(scheme="reds", domain=[0, 100]),
