@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "parking-explorer"
+version = "0.1.0"
+description = "Explore and visualize Franklin parking availability collected in DynamoDB, cached locally in DuckDB"
+authors = []
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.13"
+streamlit = "*"
+duckdb = "*"
+boto3 = "*"
+pandas = "*"
+altair = "*"
+python-dotenv = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
